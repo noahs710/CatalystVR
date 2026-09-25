@@ -10,8 +10,8 @@
 ## Known executables (hashes pending T2/M0A)
 | Build | Path | SHA-256 | Version | Adapter evidence |
 |---|---|---|---|---|
-| Retail (offline) | `MirrorsEdgeCatalyst.exe` (87 MB) | TBD T2 | TBD T2 | TBD T3B |
-| Trial | `MirrorsEdgeCatalystTrial.exe` (110 MB) | TBD T2 | TBD T2 | TBD T3B, only if executed |
+| Retail (offline) | `MirrorsEdgeCatalyst.exe` (87,780,864 B) | `b1b6acf3…9f790` (full in `BASELINE_M0A.md`) | 1.0.3.47248 | TBD T3B |
+| Trial | `MirrorsEdgeCatalystTrial.exe` (110,540,720 B) | `519957ac…41d8` (full in `BASELINE_M0A.md`) | 1.0.3.47248 | TBD T3B, only if executed |
 
 Retail and Trial are fingerprinted independently; neither borrows the other's
 hook evidence (spec §2).
