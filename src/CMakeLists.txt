@@ -36,3 +36,22 @@ target_link_libraries(mecvr_compat PUBLIC mecvr_core version psapi bcrypt)
 # arrives with a later task.
 add_executable(mecvr_diag bootstrap/diag_main.cc)
 target_link_libraries(mecvr_diag PRIVATE mecvr_compat mecvr_core)
+
+# M0B safe-injection runtime (game stream, T6). Static CRT: the injected DLL
+# must not depend on a CRT DLL inside the game process.
+# Static-CRT twin of mecvr_core: the injected DLL must not mix CRTs, so the
+# objects linked into it are compiled /MT as well (same sources, same flags).
+add_library(mecvr_core_mt STATIC
+  config/config.cc
+  diagnostics/logging.cc
+)
+target_include_directories(mecvr_core_mt PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+set_property(TARGET mecvr_core_mt PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+
+add_library(mecvr_runtime SHARED bootstrap/runtime.cc)
+target_include_directories(mecvr_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(mecvr_runtime PRIVATE mecvr_core_mt)
+set_property(TARGET mecvr_runtime PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+
+add_executable(mecvr_inject bootstrap/inject_main.cc bootstrap/inject.cc)
+target_include_directories(mecvr_inject PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
