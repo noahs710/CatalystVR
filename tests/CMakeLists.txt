@@ -20,6 +20,15 @@ add_custom_command(TARGET mecvr_real_xr_test POST_BUILD
 )
 add_test(NAME real_xr_session_test COMMAND mecvr_real_xr_test)
 
+add_executable(mecvr_xr_scene_test xr_scene/xr_scene_test.cc)
+target_link_libraries(mecvr_xr_scene_test PRIVATE mecvr_xr_scene mecvr_openxr_real mecvr_openxr_mock)
+add_custom_command(TARGET mecvr_xr_scene_test POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/openxr/bin/openxr_loader.dll
+    $<TARGET_FILE_DIR:mecvr_xr_scene_test>
+)
+add_test(NAME xr_scene_test COMMAND mecvr_xr_scene_test)
+
 add_executable(mecvr_synthetic_test ../src/render/synthetic_test.cc)
 target_link_libraries(mecvr_synthetic_test PRIVATE mecvr_render)
 add_test(NAME synthetic_observer_test COMMAND mecvr_synthetic_test)

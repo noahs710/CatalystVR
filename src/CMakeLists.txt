@@ -40,6 +40,14 @@ target_link_libraries(mecvr_openxr_real PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/openxr/lib/openxr_loader.lib
 )
 
+# Standalone stereo test scene (render/test streams, T9). Own D3D11 device,
+# per-eye render targets, eye-tinted output verified by readback.
+add_library(mecvr_xr_scene STATIC
+  openxr/test/xr_scene.cc
+)
+target_include_directories(mecvr_xr_scene PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(mecvr_xr_scene PUBLIC mecvr_openxr_mock d3d11 dxgi)
+
 add_library(mecvr_compat STATIC
   compatibility/support_report.cc
 )
