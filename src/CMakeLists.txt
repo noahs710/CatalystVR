@@ -26,6 +26,20 @@ add_library(mecvr_openxr_mock STATIC
 )
 target_include_directories(mecvr_openxr_mock PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
+# Real OpenXR backend (render stream, T8). Vendored Khronos loader lives in
+# third_party/openxr (headers + lib + dll + loader source reference).
+add_library(mecvr_openxr_real STATIC
+  openxr/real_xr_backend.cc
+)
+target_include_directories(mecvr_openxr_real PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/openxr/include
+)
+target_link_libraries(mecvr_openxr_real PUBLIC mecvr_openxr_mock d3d11 dxgi)
+target_link_libraries(mecvr_openxr_real PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/openxr/lib/openxr_loader.lib
+)
+
 add_library(mecvr_compat STATIC
   compatibility/support_report.cc
 )

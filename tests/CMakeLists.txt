@@ -10,6 +10,16 @@ add_executable(mecvr_mock_xr_test ../src/openxr/mock_xr_test.cc)
 target_link_libraries(mecvr_mock_xr_test PRIVATE mecvr_openxr_mock)
 add_test(NAME mock_xr_test COMMAND mecvr_mock_xr_test)
 
+add_executable(mecvr_real_xr_test ../src/openxr/real_xr_test.cc)
+target_link_libraries(mecvr_real_xr_test PRIVATE mecvr_openxr_real mecvr_openxr_mock)
+# The test loads the vendored loader DLL; stage it beside the test binary.
+add_custom_command(TARGET mecvr_real_xr_test POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/openxr/bin/openxr_loader.dll
+    $<TARGET_FILE_DIR:mecvr_real_xr_test>
+)
+add_test(NAME real_xr_session_test COMMAND mecvr_real_xr_test)
+
 add_executable(mecvr_synthetic_test ../src/render/synthetic_test.cc)
 target_link_libraries(mecvr_synthetic_test PRIVATE mecvr_render)
 add_test(NAME synthetic_observer_test COMMAND mecvr_synthetic_test)
