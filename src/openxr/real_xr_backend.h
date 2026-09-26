@@ -42,6 +42,10 @@ struct RealBackendDiagnostics {
   bool session_loss = false;
   bool instance_loss = false;
   std::uint64_t frames_pumped = 0;
+  std::uint64_t end_failed = 0;  // Live counter: xrEndFrame failures.
+  std::string mono_layer =
+      "projection (pending)";  // Live: quad WxH or projection + reason.
+  std::string mono_space = "n-a";  // Live: view (head-locked) or local.
   std::string runtime_name;
   std::uint32_t runtime_version_major = 0;
   std::uint32_t runtime_version_minor = 0;
@@ -77,6 +81,19 @@ class RealOpenXRBackend final : public IXrBackend {
   bool endFrame(bool submitted) override;
   void recenter() override;
   ControllerState controllerState(Hand hand) override;
+  bool uploadEyeImage(std::uint32_t view_index, const std::uint8_t* rgba,
+                      std::uint32_t width,
+                      std::uint32_t height) override;
+  // M2B mono presentation: a single compositor quad in LOCAL space.
+  // Identical pixels through two IPD-offset projection frustums give
+  // inconsistent disparity (dizzying); a quad lets the runtime render each
+  // eye's view of ONE image natively — correct convergence with mono
+  // content, no stereo reconstruction. Projection layers return in M6
+  // with true per-eye rendering. Auto-sized via ensureMonoLayer on the
+  // worker tick; this explicit entry point forces (re)creation. Default
+  // ON; MECVR_MONO_LAYER=projection keeps the projection path for A/B.
+  bool enableQuadLayer(std::uint32_t width, std::uint32_t height);
+  bool ensureMonoLayer(std::uint32_t width, std::uint32_t height) override;
   float displayFrequencyHz() const override;
   ViewConfig viewConfig(std::uint32_t view_index) const override;
   std::uint32_t viewCount() const override;
@@ -89,6 +106,14 @@ class RealOpenXRBackend final : public IXrBackend {
 
   // Event pump; caller holds mutex_.
   static bool PollEventsLocked(Native& native, RealBackendDiagnostics& diag);
+
+  // Quad mono helpers (M2B); caller holds mutex_.
+  static bool QuadWanted();
+  static bool QuadLocal();
+  static void DestroyQuadLocked(Native& n);
+  static bool CreateQuadLocked(Native& n, std::uint32_t width,
+                               std::uint32_t height,
+                               const char** fail_reason_out);
 
   mutable std::mutex mutex_;
   std::atomic<bool> running_{false};

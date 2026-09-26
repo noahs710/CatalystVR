@@ -52,6 +52,9 @@ struct M2bStats {
   std::size_t mailbox_high_water = 0;
   // Timing side (nanoseconds, steady clock around each stage).
   std::int64_t wait_ns = 0;     // waitFrame (XR-owned pacing).
+  std::int64_t upload_ns = 0;   // Eye upload into swapchain (last submit).
+  std::int64_t upload_max_ns = 0;
+  std::uint64_t upload_failed = 0;  // Upload failures (frame skipped).
   std::int64_t copy_ns = 0;     // Mono upload memcpy (last submit).
   std::int64_t copy_max_ns = 0;
   std::int64_t acquire_ns = 0;  // Both-eye acquire (last submit).

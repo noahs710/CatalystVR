@@ -100,6 +100,30 @@ class IXrBackend {
   virtual LocatedViews locateViews(Space space) = 0;
   virtual std::uint32_t acquireSwapchainImage(std::uint32_t view_index) = 0;
   virtual void releaseSwapchainImage(std::uint32_t view_index) = 0;
+  // Uploads one eye's RGBA pixels into the CURRENTLY ACQUIRED swapchain
+  // image (acquire first). Called on the XR worker between acquire and
+  // release. Default no-op (mock/test backends); the real backend copies
+  // into the D3D11 swapchain texture. Returns false on failure (frame is
+  // skipped, never partially submitted).
+  virtual bool uploadEyeImage(std::uint32_t view_index, const std::uint8_t* rgba,
+                              std::uint32_t width, std::uint32_t height) {
+    (void)view_index;
+    (void)rgba;
+    (void)width;
+    (void)height;
+    return true;
+  }
+  // Ensures the mono composition target exists at the given source dims
+  // BEFORE the tick's acquire calls (M2B quad sizing). Default no-op true
+  // (mock/test backends + projection path); the real backend creates (or
+  // rebuilds after a game resize) its quad chain here so acquire/upload
+  // never straddle a chain swap. Always returns true: quad failure falls
+  // back to the projection path, never fails the frame.
+  virtual bool ensureMonoLayer(std::uint32_t width, std::uint32_t height) {
+    (void)width;
+    (void)height;
+    return true;
+  }
   virtual bool endFrame(bool submitted) = 0;
 
   // Spaces.

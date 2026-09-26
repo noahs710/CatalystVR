@@ -16,7 +16,11 @@
 #include <openxr/openxr_platform.h>
 #pragma warning(pop)
 
+#include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <vector>
 
 namespace mecvr::openxr {
@@ -148,6 +152,32 @@ struct RealOpenXRBackend::Native {
   ID3D11DeviceContext* context = nullptr;
   XrSwapchain chains[2] = {XR_NULL_HANDLE, XR_NULL_HANDLE};
   std::vector<XrSwapchainImageD3D11KHR> images[2];
+  // Last located raw views + base space, cached for the projection layer
+  // built in endFrame(true). Views are re-located every tick; the cache
+  // always reflects the most recent successful locateViews.
+  ::XrView last_raw_views[2];
+  bool last_raw_valid = false;
+  XrSpace last_base_space = XR_NULL_HANDLE;
+  // Live-upload staging (M2B): per-view CPU-write texture at swapchain
+  // dims/format + the currently acquired image index. -1 = none acquired.
+  ID3D11Texture2D* staging[2] = {nullptr, nullptr};
+  std::uint32_t staging_w[2] = {0, 0};
+  std::uint32_t staging_h[2] = {0, 0};
+  std::int64_t acquired_index[2] = {-1, -1};
+  DXGI_FORMAT swap_format = DXGI_FORMAT_UNKNOWN;
+  // Quad-layer mono presentation (M2B): one chain + staging; the worker's
+  // two aliased view indices (0,1) map onto this single chain — acquire(0)
+  // acquires, acquire(1) aliases; upload(0) uploads, upload(1) is a no-op;
+  // release(0) releases, release(1) is a no-op.
+  bool quad_enabled = false;
+  XrSwapchain quad_chain = XR_NULL_HANDLE;
+  std::vector<XrSwapchainImageD3D11KHR> quad_images;
+  ID3D11Texture2D* quad_staging = nullptr;
+  std::uint32_t quad_w = 0;
+  std::uint32_t quad_h = 0;
+  std::int64_t quad_acquired = -1;
+  bool quad_tried = false;  // Lazy-enable attempt done (env read once).
+  bool quad_local = false;  // World-locked LOCAL pose vs head-locked VIEW.
   XrSessionState state = XR_SESSION_STATE_UNKNOWN;
   bool begun = false;
   bool stage_supported = false;
@@ -429,13 +459,23 @@ bool RealOpenXRBackend::startup() {
       (void)xrEnumerateSwapchainFormats(n.session, format_count,
                                         &format_count, formats.data());
     }
+    // Prefer UNORM 1:1 with captured game bytes (no color shift); SRGB
+    // second; runtime default last. M2 shows game pixels, not a grade.
+    const std::int64_t kPreference[] = {DXGI_FORMAT_R8G8B8A8_UNORM,
+                                        DXGI_FORMAT_R8G8B8A8_UNORM_SRGB};
     std::int64_t chosen = formats[0];
-    for (std::uint32_t i = 0; i < format_count; ++i) {
-      if (formats[i] == DXGI_FORMAT_R8G8B8A8_UNORM_SRGB) {
-        chosen = formats[i];
-        break;
+    for (std::uint32_t p = 0; p < 2; ++p) {
+      bool found = false;
+      for (std::uint32_t i = 0; i < format_count; ++i) {
+        if (formats[i] == kPreference[p]) {
+          chosen = formats[i];
+          found = true;
+          break;
+        }
       }
+      if (found) break;
     }
+    n.swap_format = static_cast<DXGI_FORMAT>(chosen);
 
     for (int i = 0; i < 2; ++i) {
       XrSwapchainCreateInfo info{};
@@ -486,7 +526,17 @@ void RealOpenXRBackend::shutdown() {
       n.chains[i] = XR_NULL_HANDLE;
     }
     n.images[i].clear();
+    if (n.staging[i] != nullptr) {
+      n.staging[i]->Release();
+      n.staging[i] = nullptr;
+    }
+    n.staging_w[i] = 0;
+    n.staging_h[i] = 0;
+    n.acquired_index[i] = -1;
   }
+  DestroyQuadLocked(n);
+  n.last_raw_valid = false;
+  n.last_base_space = XR_NULL_HANDLE;
   if (n.local != XR_NULL_HANDLE) {
     xrDestroySpace(n.local);
     n.local = XR_NULL_HANDLE;
@@ -670,8 +720,225 @@ LocatedViews RealOpenXRBackend::locateViews(Space space) {
   for (int i = 0; i < 2; ++i) {
     out.views[i].pose = ToSeamPose(raw[i].pose);
     out.views[i].fov = ToSeamFov(raw[i].fov);
+    n.last_raw_views[i] = raw[i];
   }
+  // [CONV] one-shot per-eye frustum dump: rules out garbage poses/FOVs as
+  // the dizziness source (visible in DebugView / debugger output window).
+  static bool conv_dumped = false;
+  if (!conv_dumped) {
+    conv_dumped = true;
+    char conv[512];
+    std::snprintf(
+        conv, sizeof(conv),
+        "[CONV] eye0 pos=(%.4f,%.4f,%.4f) fov=(%.3f,%.3f,%.3f,%.3f) "
+        "eye1 pos=(%.4f,%.4f,%.4f) fov=(%.3f,%.3f,%.3f,%.3f)\n",
+        raw[0].pose.position.x, raw[0].pose.position.y,
+        raw[0].pose.position.z, raw[0].fov.angleLeft, raw[0].fov.angleRight,
+        raw[0].fov.angleUp, raw[0].fov.angleDown, raw[1].pose.position.x,
+        raw[1].pose.position.y, raw[1].pose.position.z,
+        raw[1].fov.angleLeft, raw[1].fov.angleRight, raw[1].fov.angleUp,
+        raw[1].fov.angleDown);
+    OutputDebugStringA(conv);
+  }
+  n.last_raw_valid = true;
+  n.last_base_space = base;
   return out;
+}
+
+// Quad mono presentation (M2B convergence fix). Identical pixels through
+// two IPD-offset projection frustums disagree per eye (dizzying); a single
+// compositor quad lets the runtime render each eye's view of ONE image
+// natively — correct convergence with mono content, no stereo work.
+// Default ON; MECVR_MONO_LAYER=projection restores projection layers
+// (A/B + M6 experiments). Helpers assume mutex_ is held.
+bool RealOpenXRBackend::QuadWanted() {
+  char v[32] = {};
+  const DWORD n = GetEnvironmentVariableA("MECVR_MONO_LAYER", v, sizeof(v));
+  return n == 0 || std::strcmp(v, "projection") != 0;
+}
+
+bool RealOpenXRBackend::QuadLocal() {
+  char v[32] = {};
+  const DWORD n = GetEnvironmentVariableA("MECVR_QUAD_SPACE", v, sizeof(v));
+  return n > 0 && std::strcmp(v, "local") == 0;
+}
+
+void RealOpenXRBackend::DestroyQuadLocked(Native& n) {
+  if (n.quad_chain != XR_NULL_HANDLE) {
+    xrDestroySwapchain(n.quad_chain);
+    n.quad_chain = XR_NULL_HANDLE;
+  }
+  n.quad_images.clear();
+  if (n.quad_staging != nullptr) {
+    n.quad_staging->Release();
+    n.quad_staging = nullptr;
+  }
+  n.quad_w = 0;
+  n.quad_h = 0;
+  n.quad_acquired = -1;
+  n.quad_enabled = false;
+}
+
+bool RealOpenXRBackend::CreateQuadLocked(Native& n, std::uint32_t width,
+                                            std::uint32_t height,
+                                            const char** fail_reason_out) {
+  auto fail = [&](const char* reason) {
+    if (fail_reason_out != nullptr) *fail_reason_out = reason;
+    char dbg[160];
+    std::snprintf(dbg, sizeof(dbg),
+                  "[QUAD] create %ux%u failed: %s\n", width, height, reason);
+    OutputDebugStringA(dbg);
+    return false;
+  };
+  if (n.session == XR_NULL_HANDLE || width == 0 || height == 0)
+    return fail("no-session-or-dims");
+  std::uint32_t count = 0;
+  if (xrEnumerateSwapchainFormats(n.session, 0, &count, nullptr) !=
+          XR_SUCCESS ||
+      count == 0)
+    return fail("format-query");
+  std::vector<std::int64_t> formats(count);
+  if (xrEnumerateSwapchainFormats(n.session, count, &count, formats.data()) !=
+      XR_SUCCESS)
+    return fail("format-query");
+  std::int64_t fmt = 0;
+  for (const std::int64_t want :
+       {static_cast<std::int64_t>(DXGI_FORMAT_R8G8B8A8_UNORM),
+        static_cast<std::int64_t>(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB),
+        static_cast<std::int64_t>(DXGI_FORMAT_B8G8R8A8_UNORM),
+        static_cast<std::int64_t>(DXGI_FORMAT_B8G8R8A8_UNORM_SRGB)}) {
+    bool found = false;
+    for (const std::int64_t f : formats) {
+      if (f == want) {
+        found = true;
+        break;
+      }
+    }
+    if (found) {
+      fmt = want;
+      break;
+    }
+  }
+  if (fmt == 0) fmt = formats[0];
+  XrSwapchainCreateInfo ci{};
+  ci.type = XR_TYPE_SWAPCHAIN_CREATE_INFO;
+  // COLOR_ATTACHMENT_BIT only — exactly the proven eye-chain flags.
+  // SAMPLED/TRANSFER_DST got the creation rejected by VDXR (silent
+  // projection fallback, still-dizzy image); D3D11 CopySubresourceRegion
+  // needs no transfer flag.
+  ci.usageFlags = XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT;
+  ci.format = fmt;
+  ci.sampleCount = 1;
+  ci.width = width;
+  ci.height = height;
+  ci.faceCount = 1;
+  ci.arraySize = 1;
+  ci.mipCount = 1;
+  const XrResult create_result =
+      xrCreateSwapchain(n.session, &ci, &n.quad_chain);
+  if (create_result != XR_SUCCESS) {
+    n.quad_chain = XR_NULL_HANDLE;
+    // Static buffer: reason must outlive this call for diagnostics.
+    static char create_fail[64];
+    std::snprintf(create_fail, sizeof(create_fail), "xrCreateSwapchain=%s",
+                  ResultName(create_result));
+    return fail(create_fail);
+  }
+  std::uint32_t icount = 0;
+  if (xrEnumerateSwapchainImages(n.quad_chain, 0, &icount, nullptr) !=
+      XR_SUCCESS) {
+    DestroyQuadLocked(n);
+    return fail("image-query");
+  }
+  n.quad_images.clear();
+  for (std::uint32_t i = 0; i < icount; ++i) {
+    XrSwapchainImageD3D11KHR img{};
+    img.type = XR_TYPE_SWAPCHAIN_IMAGE_D3D11_KHR;
+    n.quad_images.push_back(img);
+  }
+  if (xrEnumerateSwapchainImages(
+          n.quad_chain, icount, &icount,
+          reinterpret_cast<XrSwapchainImageBaseHeader*>(
+              n.quad_images.data())) != XR_SUCCESS) {
+    DestroyQuadLocked(n);
+    return fail("image-enumerate");
+  }
+  n.swap_format = static_cast<DXGI_FORMAT>(fmt);  // Only on success.
+  n.quad_w = width;
+  n.quad_h = height;
+  n.quad_enabled = true;
+  char ok[96];
+  std::snprintf(ok, sizeof(ok), "[QUAD] chain %ux%u ready, %u images\n",
+                width, height, icount);
+  OutputDebugStringA(ok);
+  return true;
+}
+
+bool RealOpenXRBackend::enableQuadLayer(std::uint32_t width,
+                                        std::uint32_t height) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  Native& n = *native_;
+  if (!running_.load()) return false;
+  if (n.quad_enabled && n.quad_w == width && n.quad_h == height) return true;
+  DestroyQuadLocked(n);
+  n.quad_tried = true;
+  return CreateQuadLocked(n, width, height, nullptr);
+}
+
+bool RealOpenXRBackend::ensureMonoLayer(std::uint32_t width,
+                                        std::uint32_t height) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  Native& n = *native_;
+  if (!running_.load() || width == 0 || height == 0) return true;
+  // Clamp to the runtime's max swapchain extent, aspect preserved.
+  std::uint32_t qw = width;
+  std::uint32_t qh = height;
+  const std::uint32_t mw =
+      view_count_ > 0 ? view_configs_[0].max_width : 0;
+  const std::uint32_t mh =
+      view_count_ > 0 ? view_configs_[0].max_height : 0;
+  if (mw > 0 && mh > 0 && (qw > mw || qh > mh)) {
+    // Plain comparisons: windows.h min/max macros break std::min/max.
+    double s = static_cast<double>(mw) / static_cast<double>(qw);
+    const double sh = static_cast<double>(mh) / static_cast<double>(qh);
+    if (sh < s) s = sh;
+    qw = static_cast<std::uint32_t>(static_cast<double>(qw) * s);
+    qh = static_cast<std::uint32_t>(static_cast<double>(qh) * s);
+    if (qw < 1) qw = 1;
+    if (qh < 1) qh = 1;
+  }
+  // Records the active composition path for the status line.
+  auto note_layer = [&](bool created, const char* reason) {
+    if (created) {
+      char buf[64];
+      std::snprintf(buf, sizeof(buf), "quad %ux%u", n.quad_w, n.quad_h);
+      diagnostics_.mono_layer = buf;
+      diagnostics_.mono_space = n.quad_local ? "local" : "view";
+    } else {
+      char buf[128];
+      std::snprintf(buf, sizeof(buf), "projection (quad: %s)",
+                    reason != nullptr ? reason : "unknown");
+      diagnostics_.mono_layer = buf;
+      diagnostics_.mono_space = "n-a";
+    }
+  };
+  if (!n.quad_tried) {
+    n.quad_tried = true;
+    n.quad_local = QuadLocal();  // MECVR_QUAD_SPACE=local or head-locked.
+    if (!QuadWanted()) {
+      diagnostics_.mono_layer = "projection (env)";
+      diagnostics_.mono_space = "n-a";
+    } else {
+      const char* reason = nullptr;
+      note_layer(CreateQuadLocked(n, qw, qh, &reason), reason);
+    }
+  } else if (n.quad_enabled && (n.quad_w != qw || n.quad_h != qh)) {
+    // Game resized mid-session: rebuild before this tick's acquires.
+    DestroyQuadLocked(n);
+    const char* reason = nullptr;
+    note_layer(CreateQuadLocked(n, qw, qh, &reason), reason);
+  }
+  return true;  // Quad failure falls back to the projection path.
 }
 
 std::uint32_t RealOpenXRBackend::acquireSwapchainImage(
@@ -679,6 +946,25 @@ std::uint32_t RealOpenXRBackend::acquireSwapchainImage(
   std::lock_guard<std::mutex> lock(mutex_);
   Native& n = *native_;
   if (!running_.load() || view_index >= view_count_) return 0u;
+  if (n.quad_enabled) {
+    // Single chain: view 0 acquires, view 1 aliases the same image.
+    // acquired_index[] mirrors the quad image so the upload guard passes.
+    if (view_index == 1) {
+      if (n.quad_acquired < 0) return 0u;
+      n.acquired_index[1] = n.quad_acquired;
+      return static_cast<std::uint32_t>(n.quad_acquired);
+    }
+    std::uint32_t qindex = 0;
+    if (xrAcquireSwapchainImage(n.quad_chain, nullptr, &qindex) != XR_SUCCESS)
+      return 0u;
+    XrSwapchainImageWaitInfo wait{};
+    wait.type = XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO;
+    wait.timeout = XR_INFINITE_DURATION;
+    if (xrWaitSwapchainImage(n.quad_chain, &wait) != XR_SUCCESS) return 0u;
+    n.quad_acquired = static_cast<std::int64_t>(qindex);
+    n.acquired_index[0] = n.quad_acquired;
+    return qindex;
+  }
   std::uint32_t index = 0;
   if (xrAcquireSwapchainImage(n.chains[view_index], nullptr, &index) !=
       XR_SUCCESS) {
@@ -688,20 +974,204 @@ std::uint32_t RealOpenXRBackend::acquireSwapchainImage(
   wait.type = XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO;
   wait.timeout = XR_INFINITE_DURATION;
   if (xrWaitSwapchainImage(n.chains[view_index], &wait) != XR_SUCCESS) return 0u;
+  n.acquired_index[view_index] = static_cast<std::int64_t>(index);
   return index;
+}
+
+bool RealOpenXRBackend::uploadEyeImage(std::uint32_t view_index,
+                                       const std::uint8_t* rgba,
+                                       std::uint32_t width,
+                                       std::uint32_t height) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  Native& n = *native_;
+  if (!running_.load() || view_index >= view_count_ || rgba == nullptr ||
+      width == 0 || height == 0 || n.device == nullptr ||
+      n.context == nullptr || n.acquired_index[view_index] < 0 ||
+      static_cast<std::size_t>(n.acquired_index[view_index]) >=
+          n.images[view_index].size()) {
+    return false;
+  }
+  if (n.quad_enabled) {
+    // Single chain: view 1 aliases view 0 — one upload, then no-op.
+    // Sizing/resize handled in ensureMonoLayer (called pre-acquire).
+    if (view_index == 1) return true;
+    const bool exact =
+        (width == n.quad_w && height == n.quad_h);
+    if (n.quad_staging == nullptr) {
+      D3D11_TEXTURE2D_DESC sd{};
+      sd.Width = n.quad_w;
+      sd.Height = n.quad_h;
+      sd.MipLevels = 1;
+      sd.ArraySize = 1;
+      sd.Format = n.swap_format;
+      sd.SampleDesc.Count = 1;
+      sd.Usage = D3D11_USAGE_DYNAMIC;
+      sd.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+      sd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+      if (FAILED(n.device->CreateTexture2D(&sd, nullptr, &n.quad_staging)) ||
+          n.quad_staging == nullptr) {
+        return false;
+      }
+    }
+    // 1:1 fast path: chain is sized to the source, so rows copy straight
+    // across (no resample, no letterbox) — ~2 ms vs ~77 ms. When the chain
+    // was clamped below source dims, nearest-neighbor downscale instead
+    // (aspect preserved by the clamp; M2 transport proof, not a grade).
+    D3D11_MAPPED_SUBRESOURCE qmapped{};
+    if (FAILED(n.context->Map(n.quad_staging, 0, D3D11_MAP_WRITE_DISCARD, 0,
+                              &qmapped))) {
+      return false;
+    }
+    const std::uint8_t* qsrc = rgba;
+    std::uint8_t* qdst = static_cast<std::uint8_t*>(qmapped.pData);
+    if (exact) {
+      const std::size_t qrow = static_cast<std::size_t>(width) * 4;
+      for (std::uint32_t y = 0; y < height; ++y) {
+        std::memcpy(qdst + static_cast<std::size_t>(y) * qmapped.RowPitch,
+                    qsrc + static_cast<std::size_t>(y) * qrow, qrow);
+      }
+    } else {
+      for (std::uint32_t y = 0; y < n.quad_h; ++y) {
+        const std::uint32_t sy =
+            static_cast<std::uint32_t>((static_cast<double>(y) * height) /
+                                       n.quad_h);
+        const std::uint8_t* srow =
+            qsrc + static_cast<std::size_t>(sy < height ? sy : height - 1) *
+                       width * 4;
+        std::uint8_t* drow =
+            qdst + static_cast<std::size_t>(y) * qmapped.RowPitch;
+        for (std::uint32_t x = 0; x < n.quad_w; ++x) {
+          const std::uint32_t sx =
+              static_cast<std::uint32_t>((static_cast<double>(x) * width) /
+                                         n.quad_w);
+          const std::uint32_t clamped_sx = sx < width ? sx : width - 1;
+          drow[x * 4 + 0] = srow[clamped_sx * 4 + 0];
+          drow[x * 4 + 1] = srow[clamped_sx * 4 + 1];
+          drow[x * 4 + 2] = srow[clamped_sx * 4 + 2];
+          drow[x * 4 + 3] = srow[clamped_sx * 4 + 3];
+        }
+      }
+    }
+    n.context->Unmap(n.quad_staging, 0);
+    if (n.quad_acquired < 0 ||
+        static_cast<std::size_t>(n.quad_acquired) >= n.quad_images.size())
+      return false;
+    ID3D11Texture2D* qtex = n.quad_images[static_cast<std::size_t>(
+        n.quad_acquired)].texture;
+    if (qtex == nullptr) return false;
+    n.context->CopySubresourceRegion(qtex, 0, 0, 0, 0, n.quad_staging, 0,
+                                     nullptr);
+    return true;
+  }
+  const std::uint32_t dst_w = view_configs_[view_index].recommended_width;
+  const std::uint32_t dst_h = view_configs_[view_index].recommended_height;
+  if (dst_w == 0 || dst_h == 0) return false;
+  // (Re)create the CPU-write staging texture at swapchain dims/format.
+  if (n.staging[view_index] == nullptr || n.staging_w[view_index] != dst_w ||
+      n.staging_h[view_index] != dst_h) {
+    if (n.staging[view_index] != nullptr) {
+      n.staging[view_index]->Release();
+      n.staging[view_index] = nullptr;
+    }
+    D3D11_TEXTURE2D_DESC sd{};
+    sd.Width = dst_w;
+    sd.Height = dst_h;
+    sd.MipLevels = 1;
+    sd.ArraySize = 1;
+    sd.Format = n.swap_format;
+    sd.SampleDesc.Count = 1;
+    sd.Usage = D3D11_USAGE_DYNAMIC;
+    sd.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    sd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+    if (FAILED(n.device->CreateTexture2D(&sd, nullptr,
+                                         &n.staging[view_index])) ||
+        n.staging[view_index] == nullptr) {
+      return false;
+    }
+    n.staging_w[view_index] = dst_w;
+    n.staging_h[view_index] = dst_h;
+  }
+  // Fit source width into the eye, preserve aspect, letterbox top/bottom
+  // with black. M2 shows pixels 1:1 where they fit; no distortion ever.
+  double scale = static_cast<double>(dst_w) / static_cast<double>(width);
+  std::uint32_t draw_w = dst_w;
+  std::uint32_t draw_h =
+      static_cast<std::uint32_t>(static_cast<double>(height) * scale);
+  if (draw_h > dst_h) {
+    scale = static_cast<double>(dst_h) / static_cast<double>(height);
+    draw_h = dst_h;
+    draw_w = static_cast<std::uint32_t>(static_cast<double>(width) * scale);
+  }
+  const std::uint32_t off_x = (dst_w - draw_w) / 2;
+  const std::uint32_t off_y = (dst_h - draw_h) / 2;
+  D3D11_MAPPED_SUBRESOURCE mapped{};
+  if (FAILED(n.context->Map(n.staging[view_index], 0, D3D11_MAP_WRITE_DISCARD,
+                            0, &mapped))) {
+    return false;
+  }
+  // Bilinear sample; black outside the fitted rect (letterbox bars).
+  auto* dst = static_cast<std::uint8_t*>(mapped.pData);
+  memset(dst, 0, static_cast<std::size_t>(mapped.RowPitch) * dst_h);
+  for (std::uint32_t y = 0; y < draw_h; ++y) {
+    const double src_y = (static_cast<double>(y) + 0.5) / scale - 0.5;
+    std::uint32_t y0 = static_cast<std::uint32_t>(src_y);
+    std::uint32_t y1 = y0 + 1;
+    const double fy = src_y - static_cast<double>(y0);
+    if (y0 >= height) y0 = height - 1;
+    if (y1 >= height) y1 = height - 1;
+    std::uint8_t* row = dst + static_cast<std::size_t>(off_y + y) *
+                                    mapped.RowPitch +
+                        static_cast<std::size_t>(off_x) * 4;
+    for (std::uint32_t x = 0; x < draw_w; ++x) {
+      const double src_x = (static_cast<double>(x) + 0.5) / scale - 0.5;
+      std::uint32_t x0 = static_cast<std::uint32_t>(src_x);
+      std::uint32_t x1 = x0 + 1;
+      const double fx = src_x - static_cast<double>(x0);
+      if (x0 >= width) x0 = width - 1;
+      if (x1 >= width) x1 = width - 1;
+      const std::uint8_t* p00 = rgba + (static_cast<std::size_t>(y0) * width + x0) * 4;
+      const std::uint8_t* p10 = rgba + (static_cast<std::size_t>(y0) * width + x1) * 4;
+      const std::uint8_t* p01 = rgba + (static_cast<std::size_t>(y1) * width + x0) * 4;
+      const std::uint8_t* p11 = rgba + (static_cast<std::size_t>(y1) * width + x1) * 4;
+      for (int c = 0; c < 4; ++c) {
+        const double v = (p00[c] * (1.0 - fx) + p10[c] * fx) * (1.0 - fy) +
+                         (p01[c] * (1.0 - fx) + p11[c] * fx) * fy;
+        row[x * 4 + c] = static_cast<std::uint8_t>(v + 0.5);
+      }
+    }
+  }
+  n.context->Unmap(n.staging[view_index], 0);
+  ID3D11Texture2D* dst_tex =
+      n.images[view_index][static_cast<std::size_t>(
+          n.acquired_index[view_index])].texture;
+  if (dst_tex == nullptr) return false;
+  n.context->CopySubresourceRegion(dst_tex, 0, 0, 0, 0,
+                                   n.staging[view_index], 0, nullptr);
+  return true;
 }
 
 void RealOpenXRBackend::releaseSwapchainImage(std::uint32_t view_index) {
   std::lock_guard<std::mutex> lock(mutex_);
   Native& n = *native_;
   if (!running_.load() || view_index >= view_count_) return;
+  if (n.quad_enabled) {
+    if (view_index == 0 && n.quad_acquired >= 0 &&
+        n.quad_chain != XR_NULL_HANDLE) {
+      XrSwapchainImageReleaseInfo info{};
+      info.type = XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO;
+      (void)xrReleaseSwapchainImage(n.quad_chain, &info);
+      n.quad_acquired = -1;
+    }
+    n.acquired_index[view_index] = -1;
+    return;
+  }
   XrSwapchainImageReleaseInfo info{};
   info.type = XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO;
   (void)xrReleaseSwapchainImage(n.chains[view_index], &info);
+  n.acquired_index[view_index] = -1;  // Upload requires a fresh acquire.
 }
 
 bool RealOpenXRBackend::endFrame(bool submitted) {
-  (void)submitted;  // M1B submits zero layers; scene layers arrive in M2B.
   std::lock_guard<std::mutex> lock(mutex_);
   Native& n = *native_;
   if (!running_.load() || !frame_open_) return false;
@@ -709,9 +1179,80 @@ bool RealOpenXRBackend::endFrame(bool submitted) {
   info.type = XR_TYPE_FRAME_END_INFO;
   info.displayTime = last_timing_.predicted_display_time_ns;
   info.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
-  info.layerCount = 0;
-  info.layers = nullptr;
+  // Quad mono (default): one image on a head-locked VIEW-space screen
+  // 2.5 m ahead at eye level, ~90-degree horizontal extent, native source
+  // aspect (no crop/stretch). The runtime renders each eye's view of the
+  // quad natively -> correct convergence; the game camera is untouched.
+  // MECVR_QUAD_SPACE=local selects the world-locked LOCAL pose instead;
+  // MECVR_MONO_LAYER=projection selects the legacy path below.
+  XrSpace quad_space = n.quad_local ? n.local : n.view;
+  if (quad_space == XR_NULL_HANDLE) quad_space = n.local;
+  if (submitted && n.quad_enabled && n.quad_chain != XR_NULL_HANDLE &&
+      quad_space != XR_NULL_HANDLE && n.quad_w > 0 && n.quad_h > 0) {
+    XrCompositionLayerQuad quad{};
+    quad.type = XR_TYPE_COMPOSITION_LAYER_QUAD;
+    quad.space = quad_space;
+    quad.pose.orientation.x = 0.0f;
+    quad.pose.orientation.y = 0.0f;
+    quad.pose.orientation.z = 0.0f;
+    quad.pose.orientation.w = 1.0f;
+    quad.pose.position.x = 0.0f;
+    quad.pose.position.y = n.quad_local ? 1.6f : 0.0f;
+    quad.pose.position.z = -2.5f;
+    quad.size.width = 5.0f;
+    quad.size.height =
+        5.0f * static_cast<float>(n.quad_h) / static_cast<float>(n.quad_w);
+    quad.subImage.swapchain = n.quad_chain;
+    quad.subImage.imageRect.offset.x = 0;
+    quad.subImage.imageRect.offset.y = 0;
+    quad.subImage.imageRect.extent.width = static_cast<std::int32_t>(n.quad_w);
+    quad.subImage.imageRect.extent.height =
+        static_cast<std::int32_t>(n.quad_h);
+    quad.subImage.imageArrayIndex = 0;
+    const XrCompositionLayerBaseHeader* quad_ptr =
+        reinterpret_cast<const XrCompositionLayerBaseHeader*>(&quad);
+    info.layerCount = 1;
+    info.layers = &quad_ptr;
+    const bool qok = xrEndFrame(n.session, &info) == XR_SUCCESS;
+    if (!qok) ++diagnostics_.end_failed;
+    frame_open_ = false;
+    return qok;
+  }
+  // M2B projection layer: the SAME uploaded image in both eyes (mono —
+  // identical subimages, no per-eye offset; head-pose differences reach
+  // the user only through the compositor's own reprojection).
+  XrCompositionLayerProjection layer{};
+  XrCompositionLayerProjectionView views[2] = {};
+  const XrCompositionLayerBaseHeader* layer_ptrs[1] = {nullptr};
+  if (submitted && n.last_raw_valid &&
+      n.last_base_space != XR_NULL_HANDLE) {
+    layer.type = XR_TYPE_COMPOSITION_LAYER_PROJECTION;
+    layer.space = n.last_base_space;
+    layer.viewCount = 2;
+    layer.views = views;
+    for (int i = 0; i < 2; ++i) {
+      views[i].type = XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW;
+      views[i].pose = n.last_raw_views[i].pose;
+      views[i].fov = n.last_raw_views[i].fov;
+      views[i].subImage.swapchain = n.chains[i];
+      views[i].subImage.imageRect.offset.x = 0;
+      views[i].subImage.imageRect.offset.y = 0;
+      views[i].subImage.imageRect.extent.width =
+          static_cast<std::int32_t>(view_configs_[i].recommended_width);
+      views[i].subImage.imageRect.extent.height =
+          static_cast<std::int32_t>(view_configs_[i].recommended_height);
+      views[i].subImage.imageArrayIndex = 0;
+    }
+    layer_ptrs[0] =
+        reinterpret_cast<const XrCompositionLayerBaseHeader*>(&layer);
+    info.layerCount = 1;
+    info.layers = layer_ptrs;
+  } else {
+    info.layerCount = 0;
+    info.layers = nullptr;
+  }
   const bool ok = xrEndFrame(n.session, &info) == XR_SUCCESS;
+  if (!ok) ++diagnostics_.end_failed;
   frame_open_ = false;
   return ok;
 }

@@ -116,6 +116,33 @@ target_include_directories(mecvr_m2a_probe PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(mecvr_m2a_probe PRIVATE d3d11 dxgi user32)
 set_property(TARGET mecvr_m2a_probe PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
 
+# M2B live mono submitter (render stream, T11-live). Self-contained MT DLL:
+# capture + mailbox + real XR worker. Mono only — no camera, stereo,
+# gameplay, or timing code.
+add_library(mecvr_m2b_live SHARED
+  render/m2b_live.cc
+  render/m2b_mono.cc
+  openxr/xr_frame_worker.cc
+  render/observer.cc
+  render/vtable_hook.cc
+  openxr/real_xr_backend.cc
+)
+target_include_directories(mecvr_m2b_live PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/openxr/include
+)
+target_link_libraries(mecvr_m2b_live PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/openxr/lib/openxr_loader.lib
+  d3d11 dxgi user32
+)
+set_property(TARGET mecvr_m2b_live PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+# The injected DLL must resolve the OpenXR loader from its own directory.
+add_custom_command(TARGET mecvr_m2b_live POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/openxr/bin/openxr_loader.dll
+    $<TARGET_FILE_DIR:mecvr_m2b_live>
+)
+
 # Best-effort conflict scanner (game stream, T7). Findings only, never blocks.
 add_library(mecvr_conflict STATIC compatibility/conflict_scan.cc)
 target_include_directories(mecvr_conflict PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

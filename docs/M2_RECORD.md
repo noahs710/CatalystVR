@@ -2,13 +2,14 @@
 
 Date: 2026-09-26.
 
-**Status: `M2 SOFTWARE GATES COMPLETE — LIVE XR TRANSPORT PROOF PENDING`**
+**Status: `M2 PASS`**
 
-This is a PROVISIONAL record, not M2 PASS. All software-closeable
-gates are met with cited evidence; the physical-headset proof block
-stays open. T10G gate + T11 live rows are explicitly open; everything
-else cites evidence below. No M3 camera work is begun or referenced
-beyond this sentence.
+M2 passed on live-headset proof 2026-09-26 (VDXR + Quest 3, retail
+Catalyst pid 33012, VIEW-space quad build). All 11 live items green
+(see "M2 PASS — live proof" below); no camera/stereo/timing/gameplay
+hooks exist or were used. This state is frozen as the M2 transport
+baseline — no further transport changes unless later evidence
+demonstrates a real transport defect.
 
 ## Per-item verdicts (spec §Sub-project 1 milestone detail)
 
@@ -86,3 +87,64 @@ reference: 5.5 us hook overhead, 0/9930 backbuffer mismatches,
 state_fail=0) BEFORE any Sub-project 2 work. Next plan scope:
 M3–M6 only (camera discovery → rotation → positional 6DoF →
 asymmetric per-eye projection → same-epoch dual-pass stereo).
+
+## Addendum 2026-09-26 — baseline run + convergence fix (stays inside M2)
+
+Baseline (projection layers, build pre-quad): 781 frames submitted, 0
+upload failures, 0 state failures, ~12 Hz submit, ~135 ms frame age —
+image VISIBLE in Quest 3 but convergence wrong / very dizzying.
+Diagnosis: identical pixels through two IPD-offset projection frustums
+disagree per eye; plus 77 ms bilinear upload starving the submit rate.
+Fix (transport presentation only, no camera/stereo/timing hooks): mono
+image now goes to ONE compositor quad in LOCAL space (2.5 m, ~90°),
+runtime renders each eye's view natively; chain sized to source for a
+1:1 row-copy upload (~2 ms). Default quad; `MECVR_MONO_LAYER=projection`
+restores the old path for A/B. First quad build silently fell back to
+projection (SAMPLED/TRANSFER_DST usage flags rejected by VDXR; found via
+up_ns still ~60 ms): fixed to COLOR_ATTACHMENT_BIT-only matching the
+proven eye chains, plus max-extent clamp, nearest-fill fallback, and
+`layer=`/`end_fail=` status fields. Live: `layer=quad 3440x1440
+end_fail=0`, up ~0.7 ms, 71.5 Hz submit, age ~51 ms, 0 failures.
+Status unchanged (still pending live proof); re-run the 11-item
+procedure above on the quad build.
+
+## M2 PASS — live proof (2026-09-26, VIEW-space quad build)
+
+Two-step injection (openxr_loader.dll, then mecvr_m2b_live.dll) into
+retail Catalyst pid 33012; VDXR active; Quest 3 connected.
+
+Final `m2b-final` line (`%TEMP%\mecvr_m2b_33012.log`):
+
+> presents=3531 captures=3531 skipped_thr=5678 state_fail=0
+> submitted=3531 reused=18609 superseded=0 empty=0 upload_fail=0
+> high_water=1 rate_game=65.6 rate_xr=72.0 age_last=59.3ms
+> age_max=63.4ms up_ns=0.49ms layer=quad 1280x720 space=view
+> end_fail=0
+
+(Note: `quad 1280x720` — the game downsized its swapchain during the
+close sequence; the quad resize-rebuild path held live with zero
+failures. Steady-state run was `quad 3440x1440` at 71.6 Hz, 0.7 ms
+upload, ~54 ms age.)
+
+11-item verdicts: (1) VDXR session/spaces/swapchains/waitFrame green.
+(2) T10G live: `T10G_GATE_VERDICT: PASS` (exit 0) — runtime requires
+LUID 0x0:0x1a699 = recorded Catalyst LUID, min FL 11.0 satisfiable by
+game 11.1, integrated session created on the Catalyst adapter
+(VDXR v1.0.10). (3–5) Stable
+identical mono in-headset, both eyes same frame. (6) Desktop game
+camera completely unchanged under HMD motion. (7) Headset-relative
+motion is compositor presentation only. (8) Metrics above; mailbox
+high-water 1; no late-frame pathology. (9) Focus/exit degradation
+clean (presents froze, worker re-showed last frame, zero failures).
+(10) Bounded worker shutdown via named event (`m2b-final` written);
+process exited; `state_fail=0 upload_fail=0 end_fail=0`; game dir
+byte-identical (337 files, max write 2026-06-15T09:37:04Z — never
+written). The game ignores WM_CLOSE (exclusive fullscreen), so worker
+stop was signaled directly before process termination (M0B precedent).
+(11) This record + support bundle.
+
+Human visual confirmation (all four): panel centered straight ahead
+at eye level; correct ultrawide aspect; image stable and comfortable
+(no dizziness); desktop camera unaffected by HMD movement; panel
+stays centered while turning the head. Head motion does NOT move the
+game camera — correct M2 behavior (tracking is Sub-project 2).

@@ -111,6 +111,14 @@ bool InjectDllByPid(DWORD pid, const std::wstring& dll_path,
       error_out =
           L"GetModuleHandle(kernel32) failed: " + LastErrorText(::GetLastError());
     } else {
+      // Plain LoadLibraryW, deliberately. A remote stub (e.g. for
+      // LoadLibraryExW+LOAD_WITH_ALTERED_SEARCH_PATH) executes unsigned
+      // dynamically-allocated code in the target, which this game kills
+      // with 0xC0000005 (verified live: stub thread AVs, process dies).
+      // Vendored dependencies are therefore pre-loaded as their own
+      // injection step (openxr_loader.dll first: absolute path needs no
+      // search), so by the time the payload loads, its imports resolve
+      // from already-loaded modules. Never write DLLs to the game dir.
       FARPROC load_library = ::GetProcAddress(kernel32, "LoadLibraryW");
       if (load_library == nullptr) {
         error_out = L"GetProcAddress(LoadLibraryW) failed: " +
@@ -137,6 +145,7 @@ bool InjectDllByPid(DWORD pid, const std::wstring& dll_path,
               error_out = L"remote LoadLibraryW returned NULL";
             } else {
               ok = true;
+              std::fwprintf(stderr, L"remote exit=0x%08lx\n", remote_module);
             }
           }
         }

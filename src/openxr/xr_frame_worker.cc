@@ -85,6 +85,10 @@ bool XrFrameWorker::pumpOnce() {
     const bool identical =
         bytes == 0 || eye_scratch_[0] == eye_scratch_[1];
 
+    // Size the mono composition target BEFORE acquiring (M2B quad; no-op
+    // for mocks and the projection path).
+    backend_.ensureMonoLayer(frame->width, frame->height);
+
     const std::int64_t acquire_start = NowNs();
     const std::uint32_t image0 = backend_.acquireSwapchainImage(0);
     const std::uint32_t image1 = backend_.acquireSwapchainImage(1);
@@ -93,12 +97,31 @@ bool XrFrameWorker::pumpOnce() {
     const std::int64_t acquire_end = NowNs();
     stats_.acquire_ns = acquire_end - acquire_start;
 
+    // Live upload: same scratch pixels into each acquired eye image.
+    // Mock/test backends no-op (return true); the real backend copies
+    // into the D3D11 swapchain texture. On failure the frame is skipped,
+    // never partially submitted.
+    const std::int64_t upload_start = NowNs();
+    const bool up0 = backend_.uploadEyeImage(
+        0, eye_scratch_[0].data(), frame->width, frame->height);
+    const bool up1 = backend_.uploadEyeImage(
+        1, eye_scratch_[1].data(), frame->width, frame->height);
+    const std::int64_t upload_end = NowNs();
+    stats_.upload_ns = upload_end - upload_start;
+    if (stats_.upload_ns > stats_.upload_max_ns)
+      stats_.upload_max_ns = stats_.upload_ns;
+
     const std::int64_t release_start = NowNs();
     backend_.releaseSwapchainImage(0);
     backend_.releaseSwapchainImage(1);
     const std::int64_t release_end = NowNs();
     stats_.release_ns = release_end - release_start;
 
+    if (!up0 || !up1) {
+      ++stats_.upload_failed;
+      backend_.endFrame(false);
+      return true;
+    }
     backend_.endFrame(true);
 
     EyeSubmitRecord record;
@@ -129,9 +152,24 @@ bool XrFrameWorker::pumpOnce() {
     last_frame_ = frame;
     stats_.mailbox_superseded = mailbox_.superseded();
   } else if (last_frame_) {
-    // No new capture: re-show the newest safe completed frame.
-    backend_.endFrame(true);
-    ++stats_.reused;
+    // No new capture: re-show the newest safe completed frame. A swapchain
+    // image must be acquired before use, so re-acquire and re-upload the
+    // same frame (never submit a stale un-acquired image).
+    backend_.acquireSwapchainImage(0);
+    backend_.acquireSwapchainImage(1);
+    const bool rup0 = backend_.uploadEyeImage(
+        0, eye_scratch_[0].data(), last_frame_->width, last_frame_->height);
+    const bool rup1 = backend_.uploadEyeImage(
+        1, eye_scratch_[1].data(), last_frame_->width, last_frame_->height);
+    backend_.releaseSwapchainImage(0);
+    backend_.releaseSwapchainImage(1);
+    if (rup0 && rup1) {
+      backend_.endFrame(true);
+      ++stats_.reused;
+    } else {
+      ++stats_.upload_failed;
+      backend_.endFrame(false);
+    }
   } else {
     backend_.endFrame(false);
     ++stats_.empty_ticks;
