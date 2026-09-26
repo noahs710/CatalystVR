@@ -70,6 +70,18 @@ set_property(TARGET mecvr_runtime PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
 add_executable(mecvr_inject bootstrap/inject_main.cc bootstrap/inject.cc)
 target_include_directories(mecvr_inject PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
+# M0C2 live-observation probe (render stream, T3B). Self-contained (own
+# MT-compiled copies of the observer sources, like mecvr_core_mt) so the
+# injected DLL never mixes CRTs. Observation only.
+add_library(mecvr_live_probe SHARED
+  render/live_probe.cc
+  render/observer.cc
+  render/vtable_hook.cc
+)
+target_include_directories(mecvr_live_probe PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(mecvr_live_probe PRIVATE d3d11 dxgi user32)
+set_property(TARGET mecvr_live_probe PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+
 # Best-effort conflict scanner (game stream, T7). Findings only, never blocks.
 add_library(mecvr_conflict STATIC compatibility/conflict_scan.cc)
 target_include_directories(mecvr_conflict PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
