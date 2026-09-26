@@ -55,3 +55,8 @@ set_property(TARGET mecvr_runtime PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
 
 add_executable(mecvr_inject bootstrap/inject_main.cc bootstrap/inject.cc)
 target_include_directories(mecvr_inject PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+# Best-effort conflict scanner (game stream, T7). Findings only, never blocks.
+add_library(mecvr_conflict STATIC compatibility/conflict_scan.cc)
+target_include_directories(mecvr_conflict PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(mecvr_conflict PUBLIC mecvr_compat mecvr_core psapi version)

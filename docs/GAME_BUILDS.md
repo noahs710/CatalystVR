@@ -15,3 +15,8 @@
 
 Retail and Trial are fingerprinted independently; neither borrows the other's
 hook evidence (spec §2).
+
+## Launch note (verified T6 integration)
+The exe must be launched with working directory = game dir (it spawns a child
+`MirrorsEdgeCatalyst.exe`; inject into the windowed child, not the stub).
+Direct launch without CWD exits quickly with no surviving process.
