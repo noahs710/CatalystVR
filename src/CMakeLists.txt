@@ -90,6 +90,17 @@ target_include_directories(mecvr_live_probe PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(mecvr_live_probe PRIVATE d3d11 dxgi user32)
 set_property(TARGET mecvr_live_probe PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
 
+# M2A capture/HUD-boundary probe (render stream, T10). Same self-contained
+# MT pattern. Observation only; HUD conversion forbidden.
+add_library(mecvr_m2a_probe SHARED
+  render/m2a_probe.cc
+  render/observer.cc
+  render/vtable_hook.cc
+)
+target_include_directories(mecvr_m2a_probe PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(mecvr_m2a_probe PRIVATE d3d11 dxgi user32)
+set_property(TARGET mecvr_m2a_probe PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+
 # Best-effort conflict scanner (game stream, T7). Findings only, never blocks.
 add_library(mecvr_conflict STATIC compatibility/conflict_scan.cc)
 target_include_directories(mecvr_conflict PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
