@@ -43,10 +43,46 @@ scaffolding (`INPUT.md`, `COMPATIBILITY.md`); full per-row detail in
 
 ## Test + STOP notes
 
-- ctest: 7/7 green at 2026-09-25 23:17 (`LastTest.log`). A stale
-  `LastTestsFailed.log` (22:30, names `real_xr_session_test`) predates
-  the green run — leftover, flagged for T1, not a gate failure.
-- STOP S1–S5: none triggered in any cited milestone doc; T12 adds no
-  hook, game-write, or camera/stereo/gameplay surface (S3 clean).
+- ctest: 10/10 green (foundation, input, mock XR, real-XR degraded,
+  scene, M2B transport, matrix/soak, gate, synthetic observer,
+  conflict scanner). T11 additions: mismatched-rate matrix
+  (200/60/90/45 over 90), stall/resume, shutdown-with-pending, 60k
+  soak with exact accounting; eye-log ring capped at 256 (was
+  unbounded — fixed at integration).
+- STOP S1–S5: none triggered. One worker-scheduler stall (not a code
+  failure): a subagent blocked forever on a shell call the scheduler
+  queued but never started; canceled and recovered directly. Permanent
+  rule: workers get PowerShell-native commands only, bounded waits, no
+  long unattended live runs — live-game/HMD validation stays
+  user-driven.
 - Hard gates honored: no game-directory writes, unknown builds fail
   closed, bounded shutdown only, no hot unload.
+
+## Live-headset gate procedure (run unchanged build first — no fixes
+## before baseline evidence)
+
+1. Quest awake, VDXR confirmed as the active OpenXR runtime.
+2. Start Catalyst normally (working dir = game dir), attach MECVR via
+   the validated injector path.
+3. T10G live: `xrGetD3D11GraphicsRequirementsKHR` LUID + feature level
+   vs recorded Catalyst LUID `0x00000000:0x0001a699` / FL 11.1.
+4. Catalyst frame visible in-headset.
+5. Identical mono content both eyes; no per-eye camera offset.
+6. HMD move/rotate: desktop Catalyst camera completely unchanged.
+7. Headset-relative motion is compositor reprojection only.
+8. Record: Present rate, XR cadence, frame age, copy cost, reuse/drop
+   accounting, mailbox high-water, XR wait/acquire/release timing,
+   late frames.
+9. Focus loss: remove headset / switch away / restore; session
+   recovers without blocking Catalyst.
+10. Game exit: bounded XR-worker/mailbox shutdown, no D3D11 state
+    failures, no sustained Present regression.
+11. Final support bundle; flip status to `M2 PASS` only if all pass.
+
+On failure: stay inside M2, diagnose transport/session only — never
+compensate with camera, stereo, timing, or gameplay hooks. On success:
+tag/freeze this state as the M2 transport baseline (regression
+reference: 5.5 us hook overhead, 0/9930 backbuffer mismatches,
+state_fail=0) BEFORE any Sub-project 2 work. Next plan scope:
+M3–M6 only (camera discovery → rotation → positional 6DoF →
+asymmetric per-eye projection → same-epoch dual-pass stereo).
