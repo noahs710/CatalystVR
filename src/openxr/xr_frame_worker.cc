@@ -1,0 +1,172 @@
+// T11 XR frame worker implementation (plan Key Decisions 2-3). See header.
+
+#include "openxr/xr_frame_worker.h"
+
+#include <chrono>
+#include <cstring>
+
+#include "openxr/xr_backend.h"
+#include "render/m2b_mono.h"
+
+namespace mecvr::openxr {
+namespace {
+
+std::int64_t NowNs() {
+  return std::chrono::duration_cast<std::chrono::nanoseconds>(
+             std::chrono::steady_clock::now().time_since_epoch())
+      .count();
+}
+
+}  // namespace
+
+XrFrameWorker::XrFrameWorker(IXrBackend& backend, FrameMailbox& mailbox)
+    : backend_(backend), mailbox_(mailbox) {}
+
+bool XrFrameWorker::pumpOnce() {
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (stop_requested_) {
+      if (!stopped_) {
+        stopped_ = true;
+        stats_.mailbox_drained += mailbox_.drain();
+        stats_.mailbox_superseded = mailbox_.superseded();
+        stats_.presents_published = mailbox_.published();
+      }
+      return false;
+    }
+    if (run_start_ns_ == 0) run_start_ns_ = NowNs();
+  }
+
+  // XR-owned pacing: the only waitFrame call site (Key Decision 2).
+  const std::int64_t wait_start = NowNs();
+  const FrameTiming timing = backend_.waitFrame();
+  const std::int64_t wait_end = NowNs();
+
+  std::lock_guard<std::mutex> lock(mutex_);
+  stats_.wait_ns = wait_end - wait_start;
+  stats_.predicted_interval_ns = timing.predicted_display_period_ns;
+
+  if (!timing.should_render) {
+    ++stats_.missed_frames;
+    return true;
+  }
+  if (!backend_.beginFrame()) {
+    ++stats_.begin_failed;
+    return true;
+  }
+  // Poses observed for diagnostics only: the mono image is identical for
+  // both eyes regardless of head pose (compositor reprojection may still
+  // move the submitted quad; the game camera is untouched).
+  const LocatedViews views = backend_.locateViews(Space::kLocal);
+  (void)views;
+
+  ++stats_.xr_frames;
+  render::MonoFramePtr frame = mailbox_.consumeNewest();
+  if (frame) {
+    if (first_capture_ns_ == 0) first_capture_ns_ = frame->capture_time_ns;
+    last_capture_ns_ = frame->capture_time_ns;
+
+    // Mono upload: the SAME pixels to both eye scratch buffers (models
+    // the XR-worker-side copy into each swapchain image). Timed as the
+    // copy stage; byte-compared as the identical-eyes proof.
+    const std::size_t bytes = frame->pixels_rgba.size();
+    const std::int64_t copy_start = NowNs();
+    for (int eye = 0; eye < 2; ++eye) {
+      eye_scratch_[eye].resize(bytes);
+      if (bytes > 0) {
+        std::memcpy(eye_scratch_[eye].data(), frame->pixels_rgba.data(),
+                    bytes);
+      }
+    }
+    const std::int64_t copy_end = NowNs();
+    stats_.copy_ns = copy_end - copy_start;
+    if (stats_.copy_ns > stats_.copy_max_ns)
+      stats_.copy_max_ns = stats_.copy_ns;
+    const bool identical =
+        bytes == 0 || eye_scratch_[0] == eye_scratch_[1];
+
+    const std::int64_t acquire_start = NowNs();
+    const std::uint32_t image0 = backend_.acquireSwapchainImage(0);
+    const std::uint32_t image1 = backend_.acquireSwapchainImage(1);
+    (void)image0;
+    (void)image1;
+    const std::int64_t acquire_end = NowNs();
+    stats_.acquire_ns = acquire_end - acquire_start;
+
+    const std::int64_t release_start = NowNs();
+    backend_.releaseSwapchainImage(0);
+    backend_.releaseSwapchainImage(1);
+    const std::int64_t release_end = NowNs();
+    stats_.release_ns = release_end - release_start;
+
+    backend_.endFrame(true);
+
+    EyeSubmitRecord record;
+    record.left_sequence = frame->sequence;
+    record.right_sequence = frame->sequence;
+    record.same_storage = true;  // One MonoFrame referenced for both.
+    record.pixels_identical = identical;
+    // Diagnostic ring, NOT a history: unbounded growth here would leak over
+    // a long session. Totals live in submitted_new/reused counters.
+    constexpr std::size_t kEyeLogCap = 256;
+    if (stats_.eye_log.size() >= kEyeLogCap) {
+      stats_.eye_log.erase(stats_.eye_log.begin(),
+                           stats_.eye_log.begin() +
+                               static_cast<std::ptrdiff_t>(
+                                   stats_.eye_log.size() - kEyeLogCap + 1));
+    }
+    stats_.eye_log.push_back(record);
+
+    const std::int64_t age =
+        timing.predicted_display_time_ns - frame->capture_time_ns;
+    stats_.last_frame_age_ns = age;
+    if (stats_.submitted_new == 0 || age > stats_.max_frame_age_ns)
+      stats_.max_frame_age_ns = age;
+    age_sum_ns_ += static_cast<double>(age);
+    ++stats_.submitted_new;
+    stats_.mean_frame_age_ns =
+        age_sum_ns_ / static_cast<double>(stats_.submitted_new);
+    last_frame_ = frame;
+    stats_.mailbox_superseded = mailbox_.superseded();
+  } else if (last_frame_) {
+    // No new capture: re-show the newest safe completed frame.
+    backend_.endFrame(true);
+    ++stats_.reused;
+  } else {
+    backend_.endFrame(false);
+    ++stats_.empty_ticks;
+  }
+  stats_.presents_published = mailbox_.published();
+  if (stats_.mailbox_high_water < mailbox_.highWater())
+    stats_.mailbox_high_water = mailbox_.highWater();
+  return true;
+}
+
+void XrFrameWorker::run(std::uint64_t max_frames) {
+  for (std::uint64_t i = 0; i < max_frames; ++i) {
+    if (!pumpOnce()) return;
+  }
+}
+
+void XrFrameWorker::requestStop() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  stop_requested_ = true;
+}
+
+M2bStats XrFrameWorker::stats() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  M2bStats out = stats_;
+  const std::int64_t now = NowNs();
+  if (now > run_start_ns_ && stats_.xr_frames > 0) {
+    out.xr_rate_hz = static_cast<double>(stats_.xr_frames) * 1e9 /
+                     static_cast<double>(now - run_start_ns_);
+  }
+  if (last_capture_ns_ > first_capture_ns_ && stats_.presents_published > 1) {
+    out.present_rate_hz =
+        static_cast<double>(stats_.presents_published - 1) * 1e9 /
+        static_cast<double>(last_capture_ns_ - first_capture_ns_);
+  }
+  return out;
+}
+
+}  // namespace mecvr::openxr

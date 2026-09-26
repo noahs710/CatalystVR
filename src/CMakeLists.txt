@@ -48,6 +48,15 @@ add_library(mecvr_xr_scene STATIC
 target_include_directories(mecvr_xr_scene PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(mecvr_xr_scene PUBLIC mecvr_openxr_mock d3d11 dxgi)
 
+# M2B mono transport (render stream, T11). Identical mono image to both
+# eyes; game thread never waits on XR. No camera/stereo/gameplay code.
+add_library(mecvr_m2b STATIC
+  render/m2b_mono.cc
+  openxr/xr_frame_worker.cc
+)
+target_include_directories(mecvr_m2b PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(mecvr_m2b PUBLIC mecvr_openxr_mock)
+
 add_library(mecvr_compat STATIC
   compatibility/support_report.cc
 )
@@ -58,6 +67,12 @@ target_link_libraries(mecvr_compat PUBLIC mecvr_core version psapi bcrypt)
 # arrives with a later task.
 add_executable(mecvr_diag bootstrap/diag_main.cc)
 target_link_libraries(mecvr_diag PRIVATE mecvr_compat mecvr_core)
+
+# Support-bundle tool (test stream, T12). Directory bundle + manifest
+# (no zip library vendored by decision).
+add_executable(mecvr_support diagnostics/support_bundle_main.cc diagnostics/support_bundle.cc)
+target_include_directories(mecvr_support PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(mecvr_support PRIVATE mecvr_core dxgi)
 
 # M0B safe-injection runtime (game stream, T6). Static CRT: the injected DLL
 # must not depend on a CRT DLL inside the game process.
