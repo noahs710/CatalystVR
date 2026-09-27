@@ -92,6 +92,10 @@ void NativePaletteTargetTracker::observePalette(
     std::uint32_t resource_id, const BonePaletteCandidate& candidate,
     std::uint64_t present_index) {
   if (resource_id == 0 || present_index == 0 || !candidate.valid()) return;
+  // Once a target has repeatable draw evidence, unrelated animated palettes
+  // must not demote it. A future resource-lifetime generation can explicitly
+  // call reset() when the underlying D3D resource is destroyed/reused.
+  if (state_.verified && state_.resource_id != resource_id) return;
   if (state_.resource_id != resource_id || !candidate_.valid() ||
       candidate_.offset != candidate.offset ||
       candidate_.stride != candidate.stride ||

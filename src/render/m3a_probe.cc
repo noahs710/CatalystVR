@@ -423,7 +423,12 @@ PaletteResourceRecord* PaletteRecordFor(ID3D11Resource* res, UINT size,
   for (std::size_t i = 0; i < kPaletteResourceTableSize; ++i) {
     auto& record = g_palette_resources[(first + i) &
                                        (kPaletteResourceTableSize - 1)];
-    if (record.res == res) return &record;
+    if (record.res == res) {
+      if (record.size == 0 && size != 0) record.size = size;
+      if (record.bind_flags == 0 && bind_flags != 0)
+        record.bind_flags = bind_flags;
+      return &record;
+    }
     if (record.res == nullptr) {
       record.res = res;
       record.id = g_next_palette_id++;

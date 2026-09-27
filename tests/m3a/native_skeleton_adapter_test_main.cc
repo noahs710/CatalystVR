@@ -88,5 +88,9 @@ int main() {
   assert(target_state.draw_bound_frames == 3);
   target.noteDraw(10, 4, 40, 0x33, 0x44);
   assert(target.snapshot().resource_id == 9);
+  BonePaletteCandidate unrelated = candidate;
+  unrelated.offset = 128;
+  target.observePalette(10, unrelated, 4);
+  assert(target.snapshot().verified);
   return 0;
 }

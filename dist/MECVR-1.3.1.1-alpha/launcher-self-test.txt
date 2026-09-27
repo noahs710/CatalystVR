@@ -1,0 +1,2 @@
+Launcher self-test: PASS
+Exit code: 0
