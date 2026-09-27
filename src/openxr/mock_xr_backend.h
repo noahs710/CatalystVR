@@ -93,6 +93,13 @@ class MockXRBackend final : public IXrBackend {
   float displayFrequencyHz() const override;
   ViewConfig viewConfig(std::uint32_t view_index) const override;
   std::uint32_t viewCount() const override;
+  bool registerSharedCapture(
+      const render::SharedCaptureRegistration& registration) override;
+  bool submitSharedFrame(const render::SharedCaptureFrame& frame) override;
+  void unregisterSharedCapture(std::uint64_t generation) override;
+  std::uint64_t sharedFramesSubmitted() const {
+    return shared_frames_submitted_;
+  }
 
  private:
   static constexpr std::uint32_t kSwapchainImageCount = 3u;
@@ -115,6 +122,8 @@ class MockXRBackend final : public IXrBackend {
   bool replaying_ = false;
   std::vector<TimestampedPose> replay_points_;
   std::size_t replay_index_ = 0;
+  render::SharedCaptureRegistration shared_registration_{};
+  std::uint64_t shared_frames_submitted_ = 0;
 };
 
 }  // namespace mecvr::openxr

@@ -4,6 +4,7 @@
 
 #include <chrono>
 #include <cstring>
+#include <utility>
 
 #include "openxr/xr_backend.h"
 #include "render/m2b_mono.h"
@@ -19,8 +20,22 @@ std::int64_t NowNs() {
 
 }  // namespace
 
-XrFrameWorker::XrFrameWorker(IXrBackend& backend, FrameMailbox& mailbox)
-    : backend_(backend), mailbox_(mailbox) {}
+XrFrameWorker::XrFrameWorker(IXrBackend& backend, FrameMailbox& mailbox,
+                             StereoMailbox* stereo_mailbox,
+                             FrameObserver observer,
+                             render::SharedCaptureMailbox<
+                                 render::SharedCaptureFrame, 3>* shared_mailbox,
+                             std::function<bool(
+                                 render::SharedCaptureRegistration*)>
+                                 registration_provider,
+                             std::function<void(bool)> consumer_ready)
+    : backend_(backend),
+      mailbox_(mailbox),
+      stereo_mailbox_(stereo_mailbox),
+      observer_(std::move(observer)),
+      shared_mailbox_(shared_mailbox),
+      registration_provider_(std::move(registration_provider)),
+      consumer_ready_(std::move(consumer_ready)) {}
 
 bool XrFrameWorker::pumpOnce() {
   {
@@ -28,7 +43,14 @@ bool XrFrameWorker::pumpOnce() {
     if (stop_requested_) {
       if (!stopped_) {
         stopped_ = true;
+        if (shared_generation_ != 0) {
+          backend_.unregisterSharedCapture(shared_generation_);
+          shared_generation_ = 0;
+        }
+        if (consumer_ready_) consumer_ready_(false);
+        if (shared_mailbox_ != nullptr) shared_mailbox_->drain();
         stats_.mailbox_drained += mailbox_.drain();
+        if (stereo_mailbox_ != nullptr) stereo_mailbox_->drain();
         stats_.mailbox_superseded = mailbox_.superseded();
         stats_.presents_published = mailbox_.published();
       }
@@ -58,9 +80,90 @@ bool XrFrameWorker::pumpOnce() {
   // both eyes regardless of head pose (compositor reprojection may still
   // move the submitted quad; the game camera is untouched).
   const LocatedViews views = backend_.locateViews(Space::kLocal);
-  (void)views;
+  if (observer_) observer_(timing, views);
 
   ++stats_.xr_frames;
+  if (shared_mailbox_ != nullptr && registration_provider_) {
+    render::SharedCaptureRegistration registration;
+    if (registration_provider_(&registration) &&
+        registration.generation != shared_generation_) {
+      if (shared_generation_ != 0)
+        backend_.unregisterSharedCapture(shared_generation_);
+      if (backend_.registerSharedCapture(registration)) {
+        shared_generation_ = registration.generation;
+        if (consumer_ready_) consumer_ready_(true);
+      } else {
+        shared_generation_ = 0;
+        ++stats_.gpu_registration_failed;
+        if (consumer_ready_) consumer_ready_(false);
+      }
+    }
+    auto gpu_frame = shared_mailbox_->acquireNewest();
+    if (gpu_frame && shared_generation_ != 0) {
+      const auto& frame = gpu_frame.payload();
+      backend_.enableStereoProjection();
+      backend_.acquireSwapchainImage(0);
+      backend_.acquireSwapchainImage(1);
+      const bool submitted = backend_.submitSharedFrame(frame);
+      backend_.releaseSwapchainImage(0);
+      backend_.releaseSwapchainImage(1);
+      if (submitted) {
+        backend_.endFrame(true);
+        ++stats_.gpu_submitted;
+        return true;
+      }
+      ++stats_.gpu_fallback;
+      backend_.unregisterSharedCapture(shared_generation_);
+      shared_generation_ = 0;
+      if (consumer_ready_) consumer_ready_(false);
+    }
+  }
+  if (stereo_mailbox_ != nullptr) {
+    render::StereoFramePtr stereo = stereo_mailbox_->consumeNewest();
+    if (stereo) {
+      // The producer must stamp both the game simulation epoch and the pose
+      // sample with the XR tick token. A mismatch is dropped rather than
+      // showing a cross-frame eye pair or silently reusing mono transport.
+      // Temporal stereo renders the two eyes on consecutive game presents;
+      // the XR worker can wake on the next compositor tick after the pair is
+      // complete. Accept only the current tick or a bounded one-tick-old
+      // source pair, while retaining the exact pair identity internally.
+      const bool current_epoch =
+          render::SameStereoEpoch(*stereo, timing.frame_index,
+                                  timing.frame_index);
+      const bool recent_epoch =
+          stereo->epoch < timing.frame_index &&
+          timing.frame_index - stereo->epoch <= 1 &&
+          stereo->pose_sequence != 0;
+      if (!render::StereoFrameValid(*stereo) ||
+          (!current_epoch && !recent_epoch)) {
+        ++stats_.stereo_rejected;
+      } else if (!stereo_projection_enabled_ &&
+                 !backend_.enableStereoProjection()) {
+        ++stats_.stereo_rejected;
+      } else {
+        stereo_projection_enabled_ = true;
+        const std::uint32_t image0 = backend_.acquireSwapchainImage(0);
+        const std::uint32_t image1 = backend_.acquireSwapchainImage(1);
+        (void)image0;
+        (void)image1;
+        const bool up0 = backend_.uploadEyeImage(
+            0, stereo->pixels_rgba[0].data(), stereo->width[0],
+            stereo->height[0]);
+        const bool up1 = backend_.uploadEyeImage(
+            1, stereo->pixels_rgba[1].data(), stereo->width[1],
+            stereo->height[1]);
+        backend_.releaseSwapchainImage(0);
+        backend_.releaseSwapchainImage(1);
+        if (up0 && up1) {
+          backend_.endFrame(true);
+          ++stats_.stereo_submitted;
+          return true;
+        }
+        ++stats_.stereo_rejected;
+      }
+    }
+  }
   render::MonoFramePtr frame = mailbox_.consumeNewest();
   if (frame) {
     if (first_capture_ns_ == 0) first_capture_ns_ = frame->capture_time_ns;

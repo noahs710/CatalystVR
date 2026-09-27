@@ -8,12 +8,17 @@ target_include_directories(mecvr_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 add_library(mecvr_render STATIC
   render/vtable_hook.cc
   render/observer.cc
+  render/force_mode.cc
+  render/bone_palette_classifier.cc
+  render/native_skeleton_adapter.cc
 )
 target_include_directories(mecvr_render PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(mecvr_render PUBLIC d3d11 dxgi)
 
 add_library(mecvr_input STATIC
   input/arbitration.cc
+  input/comfort.cc
+  input/motion_scheme.cc
   input/openxr_device.cc
   input/xinput_device.cc
   config/input_bindings.cc
@@ -35,7 +40,7 @@ target_include_directories(mecvr_openxr_real PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/openxr/include
 )
-target_link_libraries(mecvr_openxr_real PUBLIC mecvr_openxr_mock d3d11 dxgi)
+target_link_libraries(mecvr_openxr_real PUBLIC mecvr_openxr_mock d3d11 dxgi d3dcompiler)
 target_link_libraries(mecvr_openxr_real PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/openxr/lib/openxr_loader.lib
 )
@@ -57,6 +62,32 @@ add_library(mecvr_m2b STATIC
 target_include_directories(mecvr_m2b PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(mecvr_m2b PUBLIC mecvr_openxr_mock)
 
+# P2.0 camera math (Sub-project 2). Headless: math, conventions,
+# snapshot contract, body origin, hierarchy, harness. No game, no XR.
+add_library(mecvr_camera STATIC
+  camera/math.cc
+  camera/conventions.cc
+  camera/body_origin.cc
+  camera/hierarchy.cc
+  camera/harness.cc
+  camera/view_override.cc
+)
+target_include_directories(mecvr_camera PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(mecvr_camera PUBLIC mecvr_openxr_mock)
+
+# Deterministic mod-owned upper-body pose layer. The library is independent
+# of OpenXR and can be exercised entirely with synthetic controller poses.
+add_library(mecvr_ik STATIC
+  ik/arm_ik.cc
+  ik/full_body_ik.cc
+  ik/height_calibration.cc
+  ik/parkour_intent.cc
+  ik/native_bone_map.cc
+  ik/native_pose_writer.cc
+)
+target_include_directories(mecvr_ik PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(mecvr_ik PUBLIC mecvr_camera)
+
 add_library(mecvr_compat STATIC
   compatibility/support_report.cc
 )
@@ -73,6 +104,11 @@ target_link_libraries(mecvr_diag PRIVATE mecvr_compat mecvr_core)
 add_executable(mecvr_support diagnostics/support_bundle_main.cc diagnostics/support_bundle.cc)
 target_include_directories(mecvr_support PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(mecvr_support PRIVATE mecvr_core dxgi)
+
+# Native public launcher. It owns persisted configuration, package checks,
+# dry-run validation, and the actual PowerShell launch handoff.
+add_executable(mecvr_launcher WIN32 launcher/launcher_main.cc)
+target_link_libraries(mecvr_launcher PRIVATE comdlg32 user32)
 
 # M0B safe-injection runtime (game stream, T6). Static CRT: the injected DLL
 # must not depend on a CRT DLL inside the game process.
@@ -116,6 +152,60 @@ target_include_directories(mecvr_m2a_probe PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(mecvr_m2a_probe PRIVATE d3d11 dxgi user32)
 set_property(TARGET mecvr_m2a_probe PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
 
+# M3a observe-only CB intel probe (Sub-project 2). Self-contained MT DLL:
+# context observation + fingerprints + bounded dumps. Zero writes.
+add_library(mecvr_m3a_probe SHARED
+  render/m3a_probe.cc
+  render/bone_palette_classifier.cc
+  render/native_skeleton_adapter.cc
+  ik/parkour_intent.cc
+  render/observer.cc
+  render/vtable_hook.cc
+)
+target_include_directories(mecvr_m3a_probe PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(mecvr_m3a_probe PRIVATE d3d11 d3d12 dxgi user32)
+set_property(TARGET mecvr_m3a_probe PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+
+# M3b opt-in camera bridge. It reuses the observe-only probe and adds a
+# dedicated OpenXR pose worker plus a fail-closed view-matrix rewrite. The
+# original m3a_probe target remains observe-only for all existing captures.
+add_library(mecvr_m3b_live SHARED
+  render/m3a_probe.cc
+  render/body_overlay.cc
+  render/body_overlay_geometry.cc
+  render/bone_palette_classifier.cc
+  render/native_skeleton_adapter.cc
+  ik/parkour_intent.cc
+  render/live_capture.cc
+  render/observer.cc
+  render/vtable_hook.cc
+  camera/math.cc
+  camera/view_override.cc
+  ik/arm_ik.cc
+  ik/full_body_ik.cc
+  ik/height_calibration.cc
+  input/motion_scheme.cc
+  input/comfort.cc
+  input/game_input_synth.cc
+  openxr/real_xr_backend.cc
+  openxr/xr_frame_worker.cc
+)
+target_compile_definitions(mecvr_m3b_live PRIVATE MECVR_M3B=1)
+target_include_directories(mecvr_m3b_live PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/openxr/include
+)
+target_link_libraries(mecvr_m3b_live PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/openxr/lib/openxr_loader.lib
+  d3d11 d3d12 d3dcompiler dxgi user32
+)
+set_property(TARGET mecvr_m3b_live PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+add_custom_command(TARGET mecvr_m3b_live POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/openxr/bin/openxr_loader.dll
+    $<TARGET_FILE_DIR:mecvr_m3b_live>
+)
+
 # M2B live mono submitter (render stream, T11-live). Self-contained MT DLL:
 # capture + mailbox + real XR worker. Mono only — no camera, stereo,
 # gameplay, or timing code.
@@ -133,7 +223,7 @@ target_include_directories(mecvr_m2b_live PRIVATE
 )
 target_link_libraries(mecvr_m2b_live PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/openxr/lib/openxr_loader.lib
-  d3d11 dxgi user32
+  d3d11 d3dcompiler dxgi user32
 )
 set_property(TARGET mecvr_m2b_live PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
 # The injected DLL must resolve the OpenXR loader from its own directory.

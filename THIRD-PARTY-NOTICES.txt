@@ -1,0 +1,14 @@
+MECVR third-party notices
+
+MECVR original source and documentation are available under the MIT License
+in LICENSE.
+
+OpenXR headers, loader sources, and the packaged OpenXR loader are provided
+under the Apache License, Version 2.0. The complete license text is included
+in licenses\OPENXR-LICENSE.txt and in the source tree at
+third_party\openxr\LICENSE.
+
+Mirror's Edge Catalyst, Frostbite, and related names, code, assets, and
+trademarks belong to their respective owners. MECVR is an independent mod and
+does not include or redistribute game assets. A legally obtained game copy is
+required.

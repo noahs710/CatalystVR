@@ -1,0 +1,13 @@
+MECVR version: 0.1.0-preview
+Built UTC: 2026-09-26T23:40:41.7206852Z
+Artifact: preview foundation; not a complete retail game conversion.
+Stereo: immersive projection and temporal per-eye camera rendering are default-on; simultaneous native dual-pass proof is pending.
+Transport: capability-gated D3D11 shared-texture GPU path is default; CPU readback is the automatic fallback.
+Camera: opt-in M3b bridge; requires an OpenXR runtime and explicit calibration.
+Launcher: mecvr_launcher.exe provides persisted settings, dry-run checks, and launch handoff.
+Licensing: LICENSE, THIRD-PARTY-NOTICES.txt, and licenses/OPENXR-LICENSE.txt are included.
+Frosty: optional explicit backend launches a configured pack and injects only into a newly matched exact Catalyst executable.
+IK: deterministic 21-joint full-body procedural pose layer is included and headless-tested.
+Asset index: tools/index_catalyst_assets.ps1 performs a read-only Data/Patch character package scan.
+Skeleton: resource-qualified read-only palette evidence is included; game-visible body writes remain disabled until a versioned Catalyst bone map and guarded writer are proven.
+Tests: see ctest-release.txt; packaging stops on any failure.

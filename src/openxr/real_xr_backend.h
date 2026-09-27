@@ -43,6 +43,10 @@ struct RealBackendDiagnostics {
   bool instance_loss = false;
   std::uint64_t frames_pumped = 0;
   std::uint64_t end_failed = 0;  // Live counter: xrEndFrame failures.
+  bool gpu_transport_active = false;
+  std::uint64_t gpu_frames_submitted = 0;
+  std::uint64_t gpu_acquire_timeout = 0;
+  std::uint64_t gpu_registration_failed = 0;
   std::string mono_layer =
       "projection (pending)";  // Live: quad WxH or projection + reason.
   std::string mono_space = "n-a";  // Live: view (head-locked) or local.
@@ -66,6 +70,7 @@ class RealOpenXRBackend final : public IXrBackend {
   RealBackendDiagnostics diagnostics() const;
   bool stageAvailable() const;
   bool hasFocus() const;
+  BodyTrackingSnapshot bodyTracking() const;
 
   // IXrBackend. startup() runs full bring-up on the calling thread;
   // waitFrame/beginFrame/locateViews/acquire/release/endFrame belong on the
@@ -94,6 +99,11 @@ class RealOpenXRBackend final : public IXrBackend {
   // ON; MECVR_MONO_LAYER=projection keeps the projection path for A/B.
   bool enableQuadLayer(std::uint32_t width, std::uint32_t height);
   bool ensureMonoLayer(std::uint32_t width, std::uint32_t height) override;
+  bool enableStereoProjection() override;
+  bool registerSharedCapture(
+      const render::SharedCaptureRegistration& registration) override;
+  bool submitSharedFrame(const render::SharedCaptureFrame& frame) override;
+  void unregisterSharedCapture(std::uint64_t generation) override;
   float displayFrequencyHz() const override;
   ViewConfig viewConfig(std::uint32_t view_index) const override;
   std::uint32_t viewCount() const override;

@@ -30,6 +30,7 @@
 #include <cstdint>
 
 #include "openxr/xr_types.h"
+#include "render/shared_capture_mailbox.h"
 
 namespace mecvr::openxr {
 
@@ -58,6 +59,19 @@ struct LocatedViews {
   Space space = Space::kLocal;
 };
 
+inline constexpr std::size_t kBodyTrackingJointCount = 21;
+
+// Backend-owned canonical body snapshot. It intentionally contains only seam
+// types; OpenXR tracker handles and extension structs stay private to the real
+// backend implementation.
+struct BodyTrackingSnapshot {
+  std::array<XrPosef, kBodyTrackingJointCount> joints{};
+  std::uint32_t valid_mask = 0;
+  XrTime sample_time_ns = 0;
+  float confidence = 0.0f;
+  bool active = false;
+};
+
 // Per-eye swapchain sizing. Maps to XrViewConfigurationView
 // (recommendedWidth/Height, maxWidth/Height).
 struct ViewConfig {
@@ -74,6 +88,12 @@ struct ControllerState {
   XrPosef grip_pose;
   bool pose_valid = false;
   std::uint32_t buttons = 0u;
+  float thumbstick_x = 0.0f;
+  float thumbstick_y = 0.0f;
+  // Analog values are retained alongside the digital action bits so motion
+  // hands can drive authored finger/hand poses without re-sampling OpenXR.
+  float trigger_value = 0.0f;
+  float squeeze_value = 0.0f;
 };
 
 inline constexpr std::uint32_t kButtonTrigger = 1u << 0;
@@ -123,6 +143,25 @@ class IXrBackend {
     (void)width;
     (void)height;
     return true;
+  }
+  // Switches the real backend to two independent projection swapchains.
+  // Default no-op keeps mock/test backends and the mono transport unchanged.
+  virtual bool enableStereoProjection() { return true; }
+  // Optional GPU-only transport. Registration opens immutable shared handles
+  // on the runtime's D3D device; submit draws the selected shared slot into
+  // both currently acquired eye images. Backends without this capability
+  // return false and retain the CPU upload path.
+  virtual bool registerSharedCapture(
+      const render::SharedCaptureRegistration& registration) {
+    (void)registration;
+    return false;
+  }
+  virtual bool submitSharedFrame(const render::SharedCaptureFrame& frame) {
+    (void)frame;
+    return false;
+  }
+  virtual void unregisterSharedCapture(std::uint64_t generation) {
+    (void)generation;
   }
   virtual bool endFrame(bool submitted) = 0;
 

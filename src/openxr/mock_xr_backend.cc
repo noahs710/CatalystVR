@@ -260,4 +260,27 @@ ControllerState& MockXRBackend::controllerFor(Hand hand) {
   return controllers_[hand == Hand::kLeft ? 0 : 1];
 }
 
+bool MockXRBackend::registerSharedCapture(
+    const render::SharedCaptureRegistration& registration) {
+  if (!running_ || !render::IsValidSharedCaptureRegistration(registration))
+    return false;
+  shared_registration_ = registration;
+  return true;
+}
+
+bool MockXRBackend::submitSharedFrame(
+    const render::SharedCaptureFrame& frame) {
+  if (!running_ || !frame_open_ ||
+      !render::IsValidSharedCaptureFrame(frame, shared_registration_)) {
+    return false;
+  }
+  ++shared_frames_submitted_;
+  return true;
+}
+
+void MockXRBackend::unregisterSharedCapture(std::uint64_t generation) {
+  if (generation == 0 || generation == shared_registration_.generation)
+    shared_registration_ = {};
+}
+
 }  // namespace mecvr::openxr

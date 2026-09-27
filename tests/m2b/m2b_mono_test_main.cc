@@ -16,6 +16,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <atomic>
 #include <iostream>
 #include <string>
 #include <thread>
@@ -97,6 +98,47 @@ int main() {
     Check(!box.tryPublish(nullptr), "mailbox: null frame rejected");
   }
 
+  // ---- Phase 0b: shared-GPU worker routing and fallback seam -----------
+  {
+    openxr::MockXRBackend gpu_backend;
+    gpu_backend.configure({});
+    Check(gpu_backend.startup(), "gpu seam: mock backend startup");
+    openxr::FrameMailbox cpu_fallback(2);
+    render::SharedCaptureMailbox<render::SharedCaptureFrame, 3> gpu_mailbox;
+    render::SharedCaptureRegistration registration;
+    registration.luid = {1, 0};
+    registration.width = 1920;
+    registration.height = 1080;
+    registration.format = 28;
+    registration.generation = 7;
+    registration.handles = {1, 2, 3};
+    registration.slot_count = 3;
+    bool consumer_ready = false;
+    openxr::XrFrameWorker gpu_worker(
+        gpu_backend, cpu_fallback, nullptr, {}, &gpu_mailbox,
+        [&](render::SharedCaptureRegistration* out) {
+          *out = registration;
+          return true;
+        },
+        [&](bool ready) { consumer_ready = ready; });
+    gpu_worker.pumpOnce();  // Registration handshake.
+    Check(consumer_ready, "gpu seam: producer readiness acknowledged");
+    auto lease = gpu_mailbox.tryReserve();
+    Check(static_cast<bool>(lease), "gpu seam: reserve frame metadata");
+    if (lease) {
+      lease.payload() = {0, 7, 1, 1920, 1080, 28, 100};
+      Check(lease.publish({7, 1}), "gpu seam: publish frame metadata");
+    }
+    gpu_worker.pumpOnce();
+    Check(gpu_worker.stats().gpu_submitted == 1 &&
+              gpu_backend.sharedFramesSubmitted() == 1,
+          "gpu seam: shared frame bypasses CPU upload");
+    gpu_worker.requestStop();
+    gpu_worker.pumpOnce();
+    Check(!consumer_ready, "gpu seam: shutdown revokes readiness");
+    gpu_backend.shutdown();
+  }
+
   // ---- Phase 1: end-to-end mono transport on the mock ------------------
   openxr::MockXRBackend backend;
   openxr::MockConfig config;
@@ -108,7 +150,17 @@ int main() {
   Check(backend.startup(), "e2e: mock backend startup");
 
   openxr::FrameMailbox mailbox(2);
-  openxr::XrFrameWorker worker(backend, mailbox);
+  std::atomic<std::uint64_t> observed_frames{0};
+  std::atomic<bool> observed_asymmetric_fov{false};
+  openxr::XrFrameWorker worker(
+      backend, mailbox, nullptr,
+      [&](const openxr::FrameTiming&, const openxr::LocatedViews& views) {
+        observed_frames.fetch_add(1, std::memory_order_relaxed);
+        if (views.views[0].fov.angle_left != views.views[1].fov.angle_left ||
+            views.views[0].fov.angle_right != views.views[1].fov.angle_right) {
+          observed_asymmetric_fov.store(true, std::memory_order_relaxed);
+        }
+      });
 
   // Publisher = game thread. ONLY mailbox + synthetic capture.
   std::thread publisher([&] {
@@ -233,6 +285,10 @@ int main() {
   Check(stats.missed_frames == 0, "e2e: no missed XR frames on mock",
         "(mock never gates should_render; counter exercised)");
   Check(stats.begin_failed == 0, "e2e: no beginFrame failures");
+  Check(observed_frames.load(std::memory_order_relaxed) > 0,
+        "e2e: frame observer receives XR views");
+  Check(observed_asymmetric_fov.load(std::memory_order_relaxed),
+        "e2e: frame observer sees asymmetric eye FOV");
   Check(stats.mailbox_high_water >= 1 && stats.mailbox_high_water <= 2,
         "e2e: mailbox depth bounded",
         "high_water=" + std::to_string(stats.mailbox_high_water));

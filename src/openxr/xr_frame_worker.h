@@ -13,14 +13,19 @@
 // frame unsubmitted. Full instrumentation lands in M2bStats.
 
 #include <cstdint>
+#include <functional>
 #include <mutex>
 #include <vector>
 
 #include "openxr/mailbox.h"
+#include "openxr/stereo_mailbox.h"
+#include "render/shared_capture_mailbox.h"
 
 namespace mecvr::openxr {
 
 class IXrBackend;  // Declared in openxr/xr_backend.h (seam, no XR linkage).
+struct FrameTiming;
+struct LocatedViews;
 
 struct EyeSubmitRecord {
   std::uint64_t left_sequence = 0;
@@ -60,11 +65,26 @@ struct M2bStats {
   std::int64_t acquire_ns = 0;  // Both-eye acquire (last submit).
   std::int64_t release_ns = 0;  // Both-eye release (last submit).
   std::vector<EyeSubmitRecord> eye_log;
+  std::uint64_t stereo_submitted = 0;
+  std::uint64_t stereo_rejected = 0;
+  std::uint64_t gpu_submitted = 0;
+  std::uint64_t gpu_fallback = 0;
+  std::uint64_t gpu_registration_failed = 0;
 };
 
 class XrFrameWorker {
  public:
-  XrFrameWorker(IXrBackend& backend, FrameMailbox& mailbox);
+  using FrameObserver =
+      std::function<void(const FrameTiming&, const LocatedViews&)>;
+
+  XrFrameWorker(IXrBackend& backend, FrameMailbox& mailbox,
+                StereoMailbox* stereo_mailbox = nullptr,
+                FrameObserver observer = {},
+                render::SharedCaptureMailbox<render::SharedCaptureFrame, 3>*
+                    shared_mailbox = nullptr,
+                std::function<bool(render::SharedCaptureRegistration*)>
+                    registration_provider = {},
+                std::function<void(bool)> consumer_ready = {});
 
   XrFrameWorker(const XrFrameWorker&) = delete;
   XrFrameWorker& operator=(const XrFrameWorker&) = delete;
@@ -82,6 +102,8 @@ class XrFrameWorker {
  private:
   IXrBackend& backend_;
   FrameMailbox& mailbox_;
+  StereoMailbox* stereo_mailbox_ = nullptr;
+  FrameObserver observer_;
   mutable std::mutex mutex_;
   bool stop_requested_ = false;
   bool stopped_ = false;
@@ -92,6 +114,13 @@ class XrFrameWorker {
   std::int64_t first_capture_ns_ = 0;
   std::int64_t last_capture_ns_ = 0;
   double age_sum_ns_ = 0.0;
+  bool stereo_projection_enabled_ = false;
+  render::SharedCaptureMailbox<render::SharedCaptureFrame, 3>*
+      shared_mailbox_ = nullptr;
+  std::function<bool(render::SharedCaptureRegistration*)>
+      registration_provider_;
+  std::function<void(bool)> consumer_ready_;
+  std::uint64_t shared_generation_ = 0;
 };
 
 }  // namespace mecvr::openxr

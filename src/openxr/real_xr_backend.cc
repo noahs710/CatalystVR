@@ -8,6 +8,8 @@
 // D3D_FEATURE_LEVEL, and ID3D11Device in its D3D11 structs.
 #pragma warning(push, 3)
 #include <d3d11.h>
+#include <d3d11_1.h>
+#include <d3dcompiler.h>
 #include <dxgi.h>
 #pragma warning(pop)
 #define XR_USE_GRAPHICS_API_D3D11
@@ -22,6 +24,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <vector>
+
+#include "render/shared_blit_math.h"
 
 namespace mecvr::openxr {
 namespace {
@@ -139,6 +143,15 @@ const char* SessionStateName(::XrSessionState s) {
   }
 }
 
+bool HasExtension(const std::vector<::XrExtensionProperties>& properties,
+                  const char* name) {
+  if (name == nullptr) return false;
+  for (const auto& property : properties) {
+    if (std::strcmp(property.extensionName, name) == 0) return true;
+  }
+  return false;
+}
+
 }  // namespace
 
 struct RealOpenXRBackend::Native {
@@ -150,6 +163,19 @@ struct RealOpenXRBackend::Native {
   XrSpace view = XR_NULL_HANDLE;
   ID3D11Device* device = nullptr;
   ID3D11DeviceContext* context = nullptr;
+  ID3D11Device1* device1 = nullptr;
+  struct SharedSlot {
+    ID3D11Texture2D* texture = nullptr;
+    ID3D11ShaderResourceView* srv = nullptr;
+    IDXGIKeyedMutex* mutex = nullptr;
+  } shared_slots[3];
+  std::uint64_t shared_generation = 0;
+  render::SharedCaptureRegistration shared_registration{};
+  ID3D11VertexShader* shared_vs = nullptr;
+  ID3D11PixelShader* shared_ps = nullptr;
+  ID3D11SamplerState* shared_sampler = nullptr;
+  ID3D11Buffer* shared_constants = nullptr;
+  std::vector<ID3D11RenderTargetView*> shared_rtvs[2];
   XrSwapchain chains[2] = {XR_NULL_HANDLE, XR_NULL_HANDLE};
   std::vector<XrSwapchainImageD3D11KHR> images[2];
   // Last located raw views + base space, cached for the projection layer
@@ -184,6 +210,29 @@ struct RealOpenXRBackend::Native {
   PFN_xrGetD3D11GraphicsRequirementsKHR get_d3d11_requirements = nullptr;
   PFN_xrEnumerateDisplayRefreshRatesFB enum_refresh_rates = nullptr;
   PFN_xrGetDisplayRefreshRateFB get_refresh_rate = nullptr;
+  XrActionSet action_set = XR_NULL_HANDLE;
+  XrAction pose_action = XR_NULL_HANDLE;
+  XrAction trigger_action = XR_NULL_HANDLE;
+  XrAction squeeze_action = XR_NULL_HANDLE;
+  XrAction thumbstick_action = XR_NULL_HANDLE;
+  XrAction primary_action = XR_NULL_HANDLE;
+  XrAction secondary_action = XR_NULL_HANDLE;
+  XrAction menu_action = XR_NULL_HANDLE;
+  XrPath hand_paths[2] = {XR_NULL_PATH, XR_NULL_PATH};
+  XrSpace grip_spaces[2] = {XR_NULL_HANDLE, XR_NULL_HANDLE};
+  ControllerState controller_cache[2] = {};
+  bool actions_ready = false;
+  bool body_extensions_enabled = false;
+  bool full_body_supported = false;
+  bool body_tracking_ready = false;
+  XrBodyTrackerFB body_tracker = XR_NULL_HANDLE;
+  PFN_xrCreateBodyTrackerFB create_body_tracker = nullptr;
+  PFN_xrDestroyBodyTrackerFB destroy_body_tracker = nullptr;
+  PFN_xrLocateBodyJointsFB locate_body_joints = nullptr;
+  PFN_xrGetBodySkeletonFB get_body_skeleton = nullptr;
+  std::array<::XrBodyJointLocationFB, XR_FULL_BODY_JOINT_COUNT_META>
+      body_locations{};
+  BodyTrackingSnapshot body_cache{};
 };
 
 RealOpenXRBackend::RealOpenXRBackend() : native_(new Native()) {}
@@ -209,6 +258,11 @@ bool RealOpenXRBackend::hasFocus() const {
   return native_->state == XR_SESSION_STATE_FOCUSED;
 }
 
+BodyTrackingSnapshot RealOpenXRBackend::bodyTracking() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return native_->body_cache;
+}
+
 bool RealOpenXRBackend::startup() {
   std::lock_guard<std::mutex> lock(mutex_);
   RealBackendDiagnostics& d = diagnostics_;
@@ -227,12 +281,31 @@ bool RealOpenXRBackend::startup() {
     // it; some installed runtimes reject a 1.1 request outright).
     app.apiVersion = XR_API_VERSION_1_0;
 
-    const char* extensions[] = {"XR_KHR_D3D11_enable"};
+    std::uint32_t extension_count = 0;
+    std::vector<::XrExtensionProperties> properties;
+    if (xrEnumerateInstanceExtensionProperties(nullptr, 0, &extension_count,
+                                               nullptr) == XR_SUCCESS &&
+        extension_count > 0) {
+      properties.resize(extension_count);
+      for (auto& property : properties)
+        property.type = XR_TYPE_EXTENSION_PROPERTIES;
+      (void)xrEnumerateInstanceExtensionProperties(
+          nullptr, extension_count, &extension_count, properties.data());
+    }
+    std::vector<const char*> extensions = {"XR_KHR_D3D11_enable"};
+    n.body_extensions_enabled =
+        HasExtension(properties, XR_FB_BODY_TRACKING_EXTENSION_NAME) &&
+        HasExtension(properties, XR_META_BODY_TRACKING_FULL_BODY_EXTENSION_NAME);
+    if (n.body_extensions_enabled) {
+      extensions.push_back(XR_FB_BODY_TRACKING_EXTENSION_NAME);
+      extensions.push_back(XR_META_BODY_TRACKING_FULL_BODY_EXTENSION_NAME);
+    }
     XrInstanceCreateInfo create{};
     create.type = XR_TYPE_INSTANCE_CREATE_INFO;
     create.applicationInfo = app;
-    create.enabledExtensionCount = 1;
-    create.enabledExtensionNames = extensions;
+    create.enabledExtensionCount =
+        static_cast<std::uint32_t>(extensions.size());
+    create.enabledExtensionNames = extensions.data();
 
     const XrResult r = xrCreateInstance(&create, &n.instance);
     if (r != XR_SUCCESS || n.instance == XR_NULL_HANDLE) {
@@ -261,6 +334,20 @@ bool RealOpenXRBackend::startup() {
     (void)xrGetInstanceProcAddr(
         n.instance, "xrGetD3D11GraphicsRequirementsKHR",
         reinterpret_cast<PFN_xrVoidFunction*>(&n.get_d3d11_requirements));
+    if (n.body_extensions_enabled) {
+      (void)xrGetInstanceProcAddr(
+          n.instance, "xrCreateBodyTrackerFB",
+          reinterpret_cast<PFN_xrVoidFunction*>(&n.create_body_tracker));
+      (void)xrGetInstanceProcAddr(
+          n.instance, "xrDestroyBodyTrackerFB",
+          reinterpret_cast<PFN_xrVoidFunction*>(&n.destroy_body_tracker));
+      (void)xrGetInstanceProcAddr(
+          n.instance, "xrLocateBodyJointsFB",
+          reinterpret_cast<PFN_xrVoidFunction*>(&n.locate_body_joints));
+      (void)xrGetInstanceProcAddr(
+          n.instance, "xrGetBodySkeletonFB",
+          reinterpret_cast<PFN_xrVoidFunction*>(&n.get_body_skeleton));
+    }
   }
 
   // 2. System (HMD). Absent headset -> graceful degradation, not an error.
@@ -278,6 +365,21 @@ bool RealOpenXRBackend::startup() {
       return false;
     }
     d.system_acquired = true;
+  }
+
+  if (n.body_extensions_enabled) {
+    XrSystemPropertiesBodyTrackingFullBodyMETA full_body{};
+    full_body.type = XR_TYPE_SYSTEM_PROPERTIES_BODY_TRACKING_FULL_BODY_META;
+    XrSystemBodyTrackingPropertiesFB body{};
+    body.type = XR_TYPE_SYSTEM_BODY_TRACKING_PROPERTIES_FB;
+    body.next = &full_body;
+    XrSystemProperties properties{};
+    properties.type = XR_TYPE_SYSTEM_PROPERTIES;
+    properties.next = &body;
+    if (xrGetSystemProperties(n.instance, n.system, &properties) == XR_SUCCESS) {
+      n.full_body_supported = body.supportsBodyTracking == XR_TRUE &&
+                              full_body.supportsFullBodyTracking == XR_TRUE;
+    }
   }
 
   // 3. D3D11 graphics requirements: adapter LUID + min feature level gate.
@@ -361,6 +463,18 @@ bool RealOpenXRBackend::startup() {
       n.instance = XR_NULL_HANDLE;
       return false;
     }
+    if (FAILED(n.device->QueryInterface(__uuidof(ID3D11Device1),
+                                        reinterpret_cast<void**>(&n.device1))) ||
+        n.device1 == nullptr) {
+      d.failure_reason = "runtime adapter lacks ID3D11Device1 sharing";
+      n.context->Release();
+      n.context = nullptr;
+      n.device->Release();
+      n.device = nullptr;
+      xrDestroyInstance(n.instance);
+      n.instance = XR_NULL_HANDLE;
+      return false;
+    }
     d.device_created = true;
   }
 
@@ -376,6 +490,10 @@ bool RealOpenXRBackend::startup() {
     const XrResult r = xrCreateSession(n.instance, &info, &n.session);
     if (r != XR_SUCCESS) {
       d.failure_reason = std::string("xrCreateSession failed: ") + ResultName(r);
+      if (n.device1 != nullptr) {
+        n.device1->Release();
+        n.device1 = nullptr;
+      }
       if (n.context != nullptr) {
         n.context->Release();
         n.context = nullptr;
@@ -389,6 +507,20 @@ bool RealOpenXRBackend::startup() {
       return false;
     }
     d.session_created = true;
+  }
+
+  // 5b. Optional Meta full-body provider. A failed tracker creation is not a
+  // session failure: procedural IK remains the deterministic fallback.
+  if (n.body_extensions_enabled && n.full_body_supported &&
+      n.create_body_tracker != nullptr && n.destroy_body_tracker != nullptr &&
+      n.locate_body_joints != nullptr) {
+    XrBodyTrackerCreateInfoFB info{};
+    info.type = XR_TYPE_BODY_TRACKER_CREATE_INFO_FB;
+    info.bodyJointSet = XR_BODY_JOINT_SET_FULL_BODY_META;
+    if (n.create_body_tracker(n.session, &info, &n.body_tracker) == XR_SUCCESS &&
+        n.body_tracker != XR_NULL_HANDLE) {
+      n.body_tracking_ready = true;
+    }
   }
 
   // 6. Spaces: LOCAL + VIEW always; STAGE only where supported (Dec. 9).
@@ -420,6 +552,133 @@ bool RealOpenXRBackend::startup() {
       return false;
     }
     d.stage_available = n.stage_supported;
+  }
+
+  // 6b. Native OpenXR input actions. This is deliberately optional: a
+  // runtime may expose views but no controller interaction profile. In that
+  // case the camera/session remains usable and controllerState stays neutral.
+  {
+    const auto path = [&](const char* text, XrPath* out) {
+      return xrStringToPath(n.instance, text, out) == XR_SUCCESS;
+    };
+    const bool paths_ok = path("/user/hand/left", &n.hand_paths[0]) &&
+                          path("/user/hand/right", &n.hand_paths[1]);
+    XrActionSetCreateInfo set_info{};
+    set_info.type = XR_TYPE_ACTION_SET_CREATE_INFO;
+    std::snprintf(set_info.actionSetName, XR_MAX_ACTION_SET_NAME_SIZE, "%s",
+                  "mecvr");
+    std::snprintf(set_info.localizedActionSetName,
+                  XR_MAX_LOCALIZED_ACTION_SET_NAME_SIZE, "%s", "MECVR");
+    set_info.priority = 0;
+    const auto make_action = [&](const char* name, const char* localized,
+                                 XrActionType type, XrAction* out) {
+      XrActionCreateInfo info{};
+      info.type = XR_TYPE_ACTION_CREATE_INFO;
+      std::snprintf(info.actionName, XR_MAX_ACTION_NAME_SIZE, "%s", name);
+      std::snprintf(info.localizedActionName, XR_MAX_LOCALIZED_ACTION_NAME_SIZE,
+                    "%s", localized);
+      info.actionType = type;
+      info.countSubactionPaths = 2;
+      info.subactionPaths = n.hand_paths;
+      return xrCreateAction(n.action_set, &info, out) == XR_SUCCESS;
+    };
+    if (paths_ok && xrCreateActionSet(n.instance, &set_info, &n.action_set) ==
+                        XR_SUCCESS &&
+        make_action("grip_pose", "Grip Pose", XR_ACTION_TYPE_POSE_INPUT,
+                    &n.pose_action) &&
+        make_action("trigger", "Trigger", XR_ACTION_TYPE_BOOLEAN_INPUT,
+                    &n.trigger_action) &&
+        make_action("squeeze", "Squeeze", XR_ACTION_TYPE_BOOLEAN_INPUT,
+                    &n.squeeze_action) &&
+        make_action("thumbstick", "Thumbstick", XR_ACTION_TYPE_VECTOR2F_INPUT,
+                    &n.thumbstick_action) &&
+        make_action("primary", "Primary", XR_ACTION_TYPE_BOOLEAN_INPUT,
+                    &n.primary_action) &&
+        make_action("secondary", "Secondary", XR_ACTION_TYPE_BOOLEAN_INPUT,
+                    &n.secondary_action) &&
+        make_action("menu", "Menu", XR_ACTION_TYPE_BOOLEAN_INPUT,
+                    &n.menu_action)) {
+      bool spaces_ok = true;
+      for (int hand = 0; hand < 2; ++hand) {
+        XrActionSpaceCreateInfo info{};
+        info.type = XR_TYPE_ACTION_SPACE_CREATE_INFO;
+        info.action = n.pose_action;
+        info.subactionPath = n.hand_paths[hand];
+        info.poseInActionSpace.orientation.w = 1.0f;
+        if (xrCreateActionSpace(n.session, &info, &n.grip_spaces[hand]) !=
+            XR_SUCCESS) {
+          spaces_ok = false;
+          break;
+        }
+      }
+      n.actions_ready = spaces_ok;
+      if (n.actions_ready) {
+        // Prefer the common Oculus Touch profile and keep this advisory:
+        // runtimes may select a different profile at session start. The
+        // action set itself remains valid even when this suggestion is not.
+        XrPath profile = XR_NULL_PATH;
+        XrActionSuggestedBinding bindings[12] = {};
+        const char* binding_paths[12] = {
+            "/user/hand/left/input/grip/pose",
+            "/user/hand/right/input/grip/pose",
+            "/user/hand/left/input/trigger/click",
+            "/user/hand/right/input/trigger/click",
+            "/user/hand/left/input/squeeze/click",
+            "/user/hand/right/input/squeeze/click",
+            "/user/hand/left/input/thumbstick",
+            "/user/hand/right/input/thumbstick",
+            "/user/hand/left/input/x/click",
+            "/user/hand/right/input/a/click",
+            "/user/hand/left/input/y/click",
+            "/user/hand/right/input/b/click"};
+        const XrAction actions[12] = {
+            n.pose_action,       n.pose_action,       n.trigger_action,
+            n.trigger_action,    n.squeeze_action,    n.squeeze_action,
+            n.thumbstick_action, n.thumbstick_action, n.primary_action,
+            n.primary_action,    n.secondary_action,  n.secondary_action};
+        bool binding_paths_ok =
+            xrStringToPath(n.instance,
+                           "/interaction_profiles/oculus/touch_controller",
+                           &profile) == XR_SUCCESS;
+        for (int i = 0; i < 12 && binding_paths_ok; ++i) {
+          bindings[i].action = actions[i];
+          binding_paths_ok = xrStringToPath(n.instance, binding_paths[i],
+                                            &bindings[i].binding) == XR_SUCCESS;
+        }
+        if (binding_paths_ok) {
+          XrInteractionProfileSuggestedBinding suggest{};
+          suggest.type = XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING;
+          suggest.interactionProfile = profile;
+          suggest.suggestedBindings = bindings;
+          suggest.countSuggestedBindings = 12;
+          (void)xrSuggestInteractionProfileBindings(n.instance, &suggest);
+        }
+        XrSessionActionSetsAttachInfo attach{};
+        attach.type = XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO;
+        attach.countActionSets = 1;
+        attach.actionSets = &n.action_set;
+        n.actions_ready = xrAttachSessionActionSets(n.session, &attach) ==
+                          XR_SUCCESS;
+      }
+    }
+    if (!n.actions_ready) {
+      for (XrSpace& space : n.grip_spaces) {
+        if (space != XR_NULL_HANDLE) xrDestroySpace(space);
+        space = XR_NULL_HANDLE;
+      }
+      const XrAction actions[] = {n.pose_action, n.trigger_action,
+                                  n.squeeze_action, n.thumbstick_action,
+                                  n.primary_action, n.secondary_action,
+                                  n.menu_action};
+      for (XrAction action : actions) {
+        if (action != XR_NULL_HANDLE) xrDestroyAction(action);
+      }
+      if (n.action_set != XR_NULL_HANDLE) xrDestroyActionSet(n.action_set);
+      n.action_set = XR_NULL_HANDLE;
+      n.pose_action = n.trigger_action = n.squeeze_action = XR_NULL_HANDLE;
+      n.thumbstick_action = n.primary_action = n.secondary_action =
+          n.menu_action = XR_NULL_HANDLE;
+    }
   }
 
   // 7. Stereo view configs + per-eye swapchains.
@@ -520,6 +779,30 @@ void RealOpenXRBackend::shutdown() {
   std::lock_guard<std::mutex> lock(mutex_);
   Native& n = *native_;
   running_.store(false);
+  for (int eye = 0; eye < 2; ++eye) {
+    for (ID3D11RenderTargetView*& rtv : n.shared_rtvs[eye]) {
+      if (rtv != nullptr) rtv->Release();
+      rtv = nullptr;
+    }
+    n.shared_rtvs[eye].clear();
+  }
+  for (auto& slot : n.shared_slots) {
+    if (slot.mutex != nullptr) slot.mutex->Release();
+    if (slot.srv != nullptr) slot.srv->Release();
+    if (slot.texture != nullptr) slot.texture->Release();
+    slot = {};
+  }
+  if (n.shared_constants != nullptr) n.shared_constants->Release();
+  if (n.shared_sampler != nullptr) n.shared_sampler->Release();
+  if (n.shared_ps != nullptr) n.shared_ps->Release();
+  if (n.shared_vs != nullptr) n.shared_vs->Release();
+  n.shared_constants = nullptr;
+  n.shared_sampler = nullptr;
+  n.shared_ps = nullptr;
+  n.shared_vs = nullptr;
+  n.shared_generation = 0;
+  n.shared_registration = {};
+  diagnostics_.gpu_transport_active = false;
   for (int i = 0; i < 2; ++i) {
     if (n.chains[i] != XR_NULL_HANDLE) {
       xrDestroySwapchain(n.chains[i]);
@@ -535,6 +818,28 @@ void RealOpenXRBackend::shutdown() {
     n.acquired_index[i] = -1;
   }
   DestroyQuadLocked(n);
+  if (n.body_tracker != XR_NULL_HANDLE && n.destroy_body_tracker != nullptr) {
+    (void)n.destroy_body_tracker(n.body_tracker);
+  }
+  n.body_tracker = XR_NULL_HANDLE;
+  n.body_tracking_ready = false;
+  n.body_cache = {};
+  for (XrSpace& space : n.grip_spaces) {
+    if (space != XR_NULL_HANDLE) xrDestroySpace(space);
+    space = XR_NULL_HANDLE;
+  }
+  const XrAction actions[] = {n.pose_action, n.trigger_action, n.squeeze_action,
+                              n.thumbstick_action, n.primary_action,
+                              n.secondary_action, n.menu_action};
+  for (XrAction action : actions) {
+    if (action != XR_NULL_HANDLE) xrDestroyAction(action);
+  }
+  if (n.action_set != XR_NULL_HANDLE) xrDestroyActionSet(n.action_set);
+  n.action_set = XR_NULL_HANDLE;
+  n.pose_action = n.trigger_action = n.squeeze_action = XR_NULL_HANDLE;
+  n.thumbstick_action = n.primary_action = n.secondary_action =
+      n.menu_action = XR_NULL_HANDLE;
+  n.actions_ready = false;
   n.last_raw_valid = false;
   n.last_base_space = XR_NULL_HANDLE;
   if (n.local != XR_NULL_HANDLE) {
@@ -556,6 +861,10 @@ void RealOpenXRBackend::shutdown() {
   if (n.context != nullptr) {
     n.context->Release();
     n.context = nullptr;
+  }
+  if (n.device1 != nullptr) {
+    n.device1->Release();
+    n.device1 = nullptr;
   }
   if (n.device != nullptr) {
     n.device->Release();
@@ -742,6 +1051,133 @@ LocatedViews RealOpenXRBackend::locateViews(Space space) {
   }
   n.last_raw_valid = true;
   n.last_base_space = base;
+  if (n.body_tracking_ready) {
+    std::array<int, kBodyTrackingJointCount> mapping = {
+        XR_FULL_BODY_JOINT_ROOT_META,
+        XR_FULL_BODY_JOINT_HIPS_META,
+        XR_FULL_BODY_JOINT_CHEST_META,
+        XR_FULL_BODY_JOINT_NECK_META,
+        XR_FULL_BODY_JOINT_HEAD_META,
+        XR_FULL_BODY_JOINT_LEFT_SHOULDER_META,
+        XR_FULL_BODY_JOINT_LEFT_ARM_LOWER_META,
+        XR_FULL_BODY_JOINT_LEFT_HAND_WRIST_META,
+        XR_FULL_BODY_JOINT_LEFT_HAND_PALM_META,
+        XR_FULL_BODY_JOINT_RIGHT_SHOULDER_META,
+        XR_FULL_BODY_JOINT_RIGHT_ARM_LOWER_META,
+        XR_FULL_BODY_JOINT_RIGHT_HAND_WRIST_META,
+        XR_FULL_BODY_JOINT_RIGHT_HAND_PALM_META,
+        XR_FULL_BODY_JOINT_LEFT_UPPER_LEG_META,
+        XR_FULL_BODY_JOINT_LEFT_LOWER_LEG_META,
+        XR_FULL_BODY_JOINT_LEFT_FOOT_ANKLE_META,
+        XR_FULL_BODY_JOINT_LEFT_FOOT_BALL_META,
+        XR_FULL_BODY_JOINT_RIGHT_UPPER_LEG_META,
+        XR_FULL_BODY_JOINT_RIGHT_LOWER_LEG_META,
+        XR_FULL_BODY_JOINT_RIGHT_FOOT_ANKLE_META,
+        XR_FULL_BODY_JOINT_RIGHT_FOOT_BALL_META};
+    XrBodyJointsLocateInfoFB locate_body{};
+    locate_body.type = XR_TYPE_BODY_JOINTS_LOCATE_INFO_FB;
+    locate_body.baseSpace = n.local;
+    locate_body.time = last_timing_.predicted_display_time_ns;
+    XrBodyJointLocationsFB locations{};
+    locations.type = XR_TYPE_BODY_JOINT_LOCATIONS_FB;
+    locations.jointCount = XR_FULL_BODY_JOINT_COUNT_META;
+    locations.jointLocations = n.body_locations.data();
+    const XrResult body_result =
+        n.locate_body_joints(n.body_tracker, &locate_body, &locations);
+    BodyTrackingSnapshot snapshot{};
+    snapshot.sample_time_ns = locations.time;
+    snapshot.confidence = locations.confidence;
+    snapshot.active = body_result == XR_SUCCESS && locations.isActive == XR_TRUE &&
+                      locations.jointCount == XR_FULL_BODY_JOINT_COUNT_META;
+    if (snapshot.active) {
+      for (std::size_t i = 0; i < mapping.size(); ++i) {
+        const auto& joint = n.body_locations[static_cast<std::size_t>(mapping[i])];
+        const auto required = XR_SPACE_LOCATION_POSITION_VALID_BIT |
+                              XR_SPACE_LOCATION_ORIENTATION_VALID_BIT;
+        if ((joint.locationFlags & required) != required) continue;
+        snapshot.joints[i] = ToSeamPose(joint.pose);
+        snapshot.valid_mask |= (1u << i);
+      }
+    }
+    n.body_cache = snapshot;
+  }
+  if (n.actions_ready) {
+    XrActiveActionSet active{};
+    active.actionSet = n.action_set;
+    XrActionsSyncInfo sync{};
+    sync.type = XR_TYPE_ACTIONS_SYNC_INFO;
+    sync.countActiveActionSets = 1;
+    sync.activeActionSets = &active;
+    if (xrSyncActions(n.session, &sync) == XR_SUCCESS) {
+      for (int hand = 0; hand < 2; ++hand) {
+        ControllerState controller;
+        controller.grip_pose = IdentityPose();
+        const XrPath subaction = n.hand_paths[hand];
+        const auto read_bool = [&](XrAction action) {
+          XrActionStateGetInfo get{};
+          get.type = XR_TYPE_ACTION_STATE_GET_INFO;
+          get.action = action;
+          get.subactionPath = subaction;
+          XrActionStateBoolean value{};
+          value.type = XR_TYPE_ACTION_STATE_BOOLEAN;
+          return xrGetActionStateBoolean(n.session, &get, &value) == XR_SUCCESS &&
+                 value.isActive == XR_TRUE && value.currentState == XR_TRUE;
+        };
+        const auto read_float = [&](XrAction action) {
+          XrActionStateGetInfo get{};
+          get.type = XR_TYPE_ACTION_STATE_GET_INFO;
+          get.action = action;
+          get.subactionPath = subaction;
+          XrActionStateFloat value{};
+          value.type = XR_TYPE_ACTION_STATE_FLOAT;
+          if (xrGetActionStateFloat(n.session, &get, &value) != XR_SUCCESS ||
+              value.isActive != XR_TRUE) {
+            return 0.0f;
+          }
+          return std::clamp(value.currentState, 0.0f, 1.0f);
+        };
+        controller.trigger_value = read_float(n.trigger_action);
+        controller.squeeze_value = read_float(n.squeeze_action);
+        if (controller.trigger_value > 0.15f || read_bool(n.trigger_action))
+          controller.buttons |= kButtonTrigger;
+        if (controller.squeeze_value > 0.15f || read_bool(n.squeeze_action))
+          controller.buttons |= kButtonSqueeze;
+        if (read_bool(n.primary_action)) controller.buttons |= kButtonPrimary;
+        if (read_bool(n.secondary_action)) controller.buttons |= kButtonSecondary;
+        if (read_bool(n.menu_action)) controller.buttons |= kButtonMenu;
+
+        XrActionStateGetInfo axis_get{};
+        axis_get.type = XR_TYPE_ACTION_STATE_GET_INFO;
+        axis_get.action = n.thumbstick_action;
+        axis_get.subactionPath = subaction;
+        XrActionStateVector2f axis{};
+        axis.type = XR_TYPE_ACTION_STATE_VECTOR2F;
+        if (xrGetActionStateVector2f(n.session, &axis_get, &axis) == XR_SUCCESS &&
+            axis.isActive == XR_TRUE) {
+          controller.thumbstick_x = axis.currentState.x;
+          controller.thumbstick_y = axis.currentState.y;
+          if (std::fabs(controller.thumbstick_x) > 0.15f ||
+              std::fabs(controller.thumbstick_y) > 0.15f) {
+            controller.buttons |= kButtonThumbstick;
+          }
+        }
+
+        XrSpaceLocation location{};
+        location.type = XR_TYPE_SPACE_LOCATION;
+        if (n.grip_spaces[hand] != XR_NULL_HANDLE &&
+            xrLocateSpace(n.grip_spaces[hand], n.local,
+                          last_timing_.predicted_display_time_ns,
+                          &location) == XR_SUCCESS &&
+            (location.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT) != 0 &&
+            (location.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT) !=
+                0) {
+          controller.grip_pose = ToSeamPose(location.pose);
+          controller.pose_valid = true;
+        }
+        n.controller_cache[hand] = controller;
+      }
+    }
+  }
   return out;
 }
 
@@ -749,12 +1185,13 @@ LocatedViews RealOpenXRBackend::locateViews(Space space) {
 // two IPD-offset projection frustums disagree per eye (dizzying); a single
 // compositor quad lets the runtime render each eye's view of ONE image
 // natively — correct convergence with mono content, no stereo work.
-// Default ON; MECVR_MONO_LAYER=projection restores projection layers
-// (A/B + M6 experiments). Helpers assume mutex_ is held.
+// The quad is a diagnostics/cinema fallback only. Immersive camera mode uses
+// projection layers by default; MECVR_MONO_LAYER=quad explicitly requests the
+// theatre presentation. Helpers assume mutex_ is held.
 bool RealOpenXRBackend::QuadWanted() {
   char v[32] = {};
   const DWORD n = GetEnvironmentVariableA("MECVR_MONO_LAYER", v, sizeof(v));
-  return n == 0 || std::strcmp(v, "projection") != 0;
+  return n > 0 && std::strcmp(v, "quad") == 0;
 }
 
 bool RealOpenXRBackend::QuadLocal() {
@@ -941,6 +1378,233 @@ bool RealOpenXRBackend::ensureMonoLayer(std::uint32_t width,
   return true;  // Quad failure falls back to the projection path.
 }
 
+bool RealOpenXRBackend::enableStereoProjection() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  Native& n = *native_;
+  if (!running_.load()) return false;
+  // A stereo frame must never be routed through the single-image quad.
+  // Destroying it before the next acquire also prevents an in-flight alias.
+  if (n.quad_enabled) DestroyQuadLocked(n);
+  n.quad_tried = true;
+  diagnostics_.mono_layer = "projection (stereo)";
+  diagnostics_.mono_space = "n-a";
+  return true;
+}
+
+bool RealOpenXRBackend::registerSharedCapture(
+    const render::SharedCaptureRegistration& registration) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  Native& n = *native_;
+  if (!running_.load() || n.device == nullptr || n.device1 == nullptr ||
+      !render::IsValidSharedCaptureRegistration(registration)) {
+    ++diagnostics_.gpu_registration_failed;
+    return false;
+  }
+  if (n.shared_generation == registration.generation) return true;
+
+  IDXGIDevice* dxgi = nullptr;
+  IDXGIAdapter* adapter = nullptr;
+  DXGI_ADAPTER_DESC desc{};
+  const bool luid_ok =
+      SUCCEEDED(n.device->QueryInterface(__uuidof(IDXGIDevice),
+                                         reinterpret_cast<void**>(&dxgi))) &&
+      dxgi != nullptr && SUCCEEDED(dxgi->GetAdapter(&adapter)) &&
+      adapter != nullptr && SUCCEEDED(adapter->GetDesc(&desc)) &&
+      desc.AdapterLuid.LowPart == registration.luid.low &&
+      desc.AdapterLuid.HighPart == registration.luid.high;
+  if (adapter != nullptr) adapter->Release();
+  if (dxgi != nullptr) dxgi->Release();
+  if (!luid_ok) {
+    ++diagnostics_.gpu_registration_failed;
+    return false;
+  }
+
+  // A new generation is accepted only after the worker has released every
+  // object from the previous generation.
+  for (int eye = 0; eye < 2; ++eye) {
+    for (auto*& rtv : n.shared_rtvs[eye]) if (rtv != nullptr) rtv->Release();
+    n.shared_rtvs[eye].clear();
+  }
+  for (auto& slot : n.shared_slots) {
+    if (slot.mutex != nullptr) slot.mutex->Release();
+    if (slot.srv != nullptr) slot.srv->Release();
+    if (slot.texture != nullptr) slot.texture->Release();
+    slot = {};
+  }
+  n.shared_generation = 0;
+  n.shared_registration = {};
+
+  diagnostics_.gpu_transport_active = false;
+
+  for (std::uint32_t i = 0; i < registration.slot_count; ++i) {
+    HANDLE handle = reinterpret_cast<HANDLE>(
+        static_cast<std::uintptr_t>(registration.handles[i]));
+    auto& slot = n.shared_slots[i];
+    if (FAILED(n.device1->OpenSharedResource1(
+            handle, __uuidof(ID3D11Texture2D),
+            reinterpret_cast<void**>(&slot.texture))) ||
+        slot.texture == nullptr ||
+        FAILED(n.device->CreateShaderResourceView(slot.texture, nullptr,
+                                                   &slot.srv)) ||
+        FAILED(slot.texture->QueryInterface(__uuidof(IDXGIKeyedMutex),
+                                             reinterpret_cast<void**>(
+                                                 &slot.mutex)))) {
+      ++diagnostics_.gpu_registration_failed;
+      return false;
+    }
+  }
+
+  for (int eye = 0; eye < 2; ++eye) {
+    n.shared_rtvs[eye].resize(n.images[eye].size(), nullptr);
+    for (std::size_t i = 0; i < n.images[eye].size(); ++i) {
+      if (n.images[eye][i].texture == nullptr ||
+          FAILED(n.device->CreateRenderTargetView(
+              n.images[eye][i].texture, nullptr,
+              &n.shared_rtvs[eye][i]))) {
+        ++diagnostics_.gpu_registration_failed;
+        return false;
+      }
+    }
+  }
+  n.shared_registration = registration;
+  n.shared_generation = registration.generation;
+  diagnostics_.gpu_transport_active = true;
+  return true;
+}
+
+bool RealOpenXRBackend::submitSharedFrame(
+    const render::SharedCaptureFrame& frame) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  Native& n = *native_;
+  if (!running_.load() || n.context == nullptr || frame.slot >= 3 ||
+      !render::IsValidSharedCaptureFrame(frame, n.shared_registration) ||
+      n.shared_slots[frame.slot].mutex == nullptr ||
+      n.shared_slots[frame.slot].srv == nullptr) {
+    return false;
+  }
+
+  if (n.shared_vs == nullptr || n.shared_ps == nullptr) {
+    static constexpr char shader[] =
+        "cbuffer C:register(b0){float4 crop;}"
+        "struct O{float4 p:SV_POSITION;float2 u:TEXCOORD0;};"
+        "O vs(uint i:SV_VertexID){O o;float2 q=float2((i<<1)&2,i&2);"
+        "o.u=q;o.p=float4(q*float2(2,-2)+float2(-1,1),0,1);return o;}"
+        "Texture2D t:register(t0);SamplerState s:register(s0);"
+        "float4 ps(O i):SV_TARGET{return t.SampleLevel(s,crop.xy+i.u*crop.zw,0);}";
+    ID3DBlob* vs = nullptr;
+    ID3DBlob* ps = nullptr;
+    const HRESULT vh = D3DCompile(shader, sizeof(shader) - 1, nullptr, nullptr,
+                                  nullptr, "vs", "vs_5_0", 0, 0, &vs,
+                                  nullptr);
+    const HRESULT ph = D3DCompile(shader, sizeof(shader) - 1, nullptr, nullptr,
+                                  nullptr, "ps", "ps_5_0", 0, 0, &ps,
+                                  nullptr);
+    const bool compiled = SUCCEEDED(vh) && SUCCEEDED(ph) && vs != nullptr &&
+                          ps != nullptr;
+    if (!compiled ||
+        FAILED(n.device->CreateVertexShader(vs->GetBufferPointer(),
+                                             vs->GetBufferSize(), nullptr,
+                                             &n.shared_vs)) ||
+        FAILED(n.device->CreatePixelShader(ps->GetBufferPointer(),
+                                            ps->GetBufferSize(), nullptr,
+                                            &n.shared_ps))) {
+      if (vs != nullptr) vs->Release();
+      if (ps != nullptr) ps->Release();
+      return false;
+    }
+    vs->Release();
+    ps->Release();
+    D3D11_SAMPLER_DESC sd{};
+    sd.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+    sd.AddressU = sd.AddressV = sd.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+    sd.MaxLOD = D3D11_FLOAT32_MAX;
+    D3D11_BUFFER_DESC bd{};
+    bd.ByteWidth = 16;
+    bd.Usage = D3D11_USAGE_DYNAMIC;
+    bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+    bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+    if (FAILED(n.device->CreateSamplerState(&sd, &n.shared_sampler)) ||
+        FAILED(n.device->CreateBuffer(&bd, nullptr, &n.shared_constants))) {
+      return false;
+    }
+  }
+
+  auto& slot = n.shared_slots[frame.slot];
+  if (slot.mutex->AcquireSync(1, 0) != S_OK) {
+    ++diagnostics_.gpu_acquire_timeout;
+    return false;
+  }
+  bool ok = true;
+  for (std::uint32_t eye = 0; eye < 2 && ok; ++eye) {
+    const std::int64_t acquired = n.acquired_index[eye];
+    if (acquired < 0 || static_cast<std::size_t>(acquired) >=
+                            n.shared_rtvs[eye].size()) {
+      ok = false;
+      break;
+    }
+    ID3D11Texture2D* target =
+        n.images[eye][static_cast<std::size_t>(acquired)].texture;
+    D3D11_TEXTURE2D_DESC target_desc{};
+    target->GetDesc(&target_desc);
+    const auto crop = render::CenterCropUv(frame.width, frame.height,
+                                            target_desc.Width,
+                                            target_desc.Height);
+    D3D11_MAPPED_SUBRESOURCE mapped{};
+    if (!crop.valid || FAILED(n.context->Map(n.shared_constants, 0,
+                                             D3D11_MAP_WRITE_DISCARD, 0,
+                                             &mapped))) {
+      ok = false;
+      break;
+    }
+    const float values[4] = {crop.origin_x, crop.origin_y, crop.extent_x,
+                             crop.extent_y};
+    std::memcpy(mapped.pData, values, sizeof(values));
+    n.context->Unmap(n.shared_constants, 0);
+    D3D11_VIEWPORT viewport{};
+    viewport.Width = static_cast<float>(target_desc.Width);
+    viewport.Height = static_cast<float>(target_desc.Height);
+    viewport.MaxDepth = 1.0f;
+    ID3D11RenderTargetView* rtv =
+        n.shared_rtvs[eye][static_cast<std::size_t>(acquired)];
+    n.context->OMSetRenderTargets(1, &rtv, nullptr);
+    n.context->RSSetViewports(1, &viewport);
+    n.context->IASetInputLayout(nullptr);
+    n.context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    n.context->VSSetShader(n.shared_vs, nullptr, 0);
+    n.context->PSSetShader(n.shared_ps, nullptr, 0);
+    n.context->PSSetShaderResources(0, 1, &slot.srv);
+    n.context->PSSetSamplers(0, 1, &n.shared_sampler);
+    n.context->PSSetConstantBuffers(0, 1, &n.shared_constants);
+    n.context->Draw(3, 0);
+    ID3D11ShaderResourceView* no_srv = nullptr;
+    n.context->PSSetShaderResources(0, 1, &no_srv);
+  }
+  ID3D11RenderTargetView* no_rtv = nullptr;
+  n.context->OMSetRenderTargets(1, &no_rtv, nullptr);
+  slot.mutex->ReleaseSync(0);
+  if (ok) ++diagnostics_.gpu_frames_submitted;
+  return ok;
+}
+
+void RealOpenXRBackend::unregisterSharedCapture(std::uint64_t generation) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  Native& n = *native_;
+  if (generation != 0 && generation != n.shared_generation) return;
+  for (int eye = 0; eye < 2; ++eye) {
+    for (auto*& rtv : n.shared_rtvs[eye]) if (rtv != nullptr) rtv->Release();
+    n.shared_rtvs[eye].clear();
+  }
+  for (auto& slot : n.shared_slots) {
+    if (slot.mutex != nullptr) slot.mutex->Release();
+    if (slot.srv != nullptr) slot.srv->Release();
+    if (slot.texture != nullptr) slot.texture->Release();
+    slot = {};
+  }
+  n.shared_generation = 0;
+  n.shared_registration = {};
+  diagnostics_.gpu_transport_active = false;
+}
+
 std::uint32_t RealOpenXRBackend::acquireSwapchainImage(
     std::uint32_t view_index) {
   std::lock_guard<std::mutex> lock(mutex_);
@@ -1091,53 +1755,43 @@ bool RealOpenXRBackend::uploadEyeImage(std::uint32_t view_index,
     n.staging_w[view_index] = dst_w;
     n.staging_h[view_index] = dst_h;
   }
-  // Fit source width into the eye, preserve aspect, letterbox top/bottom
-  // with black. M2 shows pixels 1:1 where they fit; no distortion ever.
-  double scale = static_cast<double>(dst_w) / static_cast<double>(width);
-  std::uint32_t draw_w = dst_w;
-  std::uint32_t draw_h =
-      static_cast<std::uint32_t>(static_cast<double>(height) * scale);
-  if (draw_h > dst_h) {
-    scale = static_cast<double>(dst_h) / static_cast<double>(height);
-    draw_h = dst_h;
-    draw_w = static_cast<std::uint32_t>(static_cast<double>(width) * scale);
-  }
-  const std::uint32_t off_x = (dst_w - draw_w) / 2;
-  const std::uint32_t off_y = (dst_h - draw_h) / 2;
+  // Immersive projection must cover the runtime's complete eye image. Preserve
+  // source aspect by center-cropping the desktop image to the eye aspect; a
+  // contain/letterbox fit recreates a theatre panel inside a projection layer.
+  const double scale_x =
+      static_cast<double>(dst_w) / static_cast<double>(width);
+  const double scale_y =
+      static_cast<double>(dst_h) / static_cast<double>(height);
+  const double scale = scale_x > scale_y ? scale_x : scale_y;
+  const double visible_w = static_cast<double>(dst_w) / scale;
+  const double visible_h = static_cast<double>(dst_h) / scale;
+  const double source_x =
+      (static_cast<double>(width) - visible_w) * 0.5;
+  const double source_y =
+      (static_cast<double>(height) - visible_h) * 0.5;
   D3D11_MAPPED_SUBRESOURCE mapped{};
   if (FAILED(n.context->Map(n.staging[view_index], 0, D3D11_MAP_WRITE_DISCARD,
                             0, &mapped))) {
     return false;
   }
-  // Bilinear sample; black outside the fitted rect (letterbox bars).
+  // Nearest sampling keeps this fallback bounded. The final direct-GPU path
+  // will replace this CPU upload; until then, avoiding four-tap bilinear work
+  // is important at the runtime-selected Quest eye extent.
   auto* dst = static_cast<std::uint8_t*>(mapped.pData);
-  memset(dst, 0, static_cast<std::size_t>(mapped.RowPitch) * dst_h);
-  for (std::uint32_t y = 0; y < draw_h; ++y) {
-    const double src_y = (static_cast<double>(y) + 0.5) / scale - 0.5;
-    std::uint32_t y0 = static_cast<std::uint32_t>(src_y);
-    std::uint32_t y1 = y0 + 1;
-    const double fy = src_y - static_cast<double>(y0);
-    if (y0 >= height) y0 = height - 1;
-    if (y1 >= height) y1 = height - 1;
-    std::uint8_t* row = dst + static_cast<std::size_t>(off_y + y) *
-                                    mapped.RowPitch +
-                        static_cast<std::size_t>(off_x) * 4;
-    for (std::uint32_t x = 0; x < draw_w; ++x) {
-      const double src_x = (static_cast<double>(x) + 0.5) / scale - 0.5;
-      std::uint32_t x0 = static_cast<std::uint32_t>(src_x);
-      std::uint32_t x1 = x0 + 1;
-      const double fx = src_x - static_cast<double>(x0);
-      if (x0 >= width) x0 = width - 1;
-      if (x1 >= width) x1 = width - 1;
-      const std::uint8_t* p00 = rgba + (static_cast<std::size_t>(y0) * width + x0) * 4;
-      const std::uint8_t* p10 = rgba + (static_cast<std::size_t>(y0) * width + x1) * 4;
-      const std::uint8_t* p01 = rgba + (static_cast<std::size_t>(y1) * width + x0) * 4;
-      const std::uint8_t* p11 = rgba + (static_cast<std::size_t>(y1) * width + x1) * 4;
-      for (int c = 0; c < 4; ++c) {
-        const double v = (p00[c] * (1.0 - fx) + p10[c] * fx) * (1.0 - fy) +
-                         (p01[c] * (1.0 - fx) + p11[c] * fx) * fy;
-        row[x * 4 + c] = static_cast<std::uint8_t>(v + 0.5);
-      }
+  for (std::uint32_t y = 0; y < dst_h; ++y) {
+    std::uint32_t sy = static_cast<std::uint32_t>(
+        source_y + (static_cast<double>(y) + 0.5) / scale);
+    if (sy >= height) sy = height - 1;
+    std::uint8_t* row =
+        dst + static_cast<std::size_t>(y) * mapped.RowPitch;
+    const std::uint8_t* source_row =
+        rgba + static_cast<std::size_t>(sy) * width * 4;
+    for (std::uint32_t x = 0; x < dst_w; ++x) {
+      std::uint32_t sx = static_cast<std::uint32_t>(
+          source_x + (static_cast<double>(x) + 0.5) / scale);
+      if (sx >= width) sx = width - 1;
+      std::memcpy(row + static_cast<std::size_t>(x) * 4,
+                  source_row + static_cast<std::size_t>(sx) * 4, 4);
     }
   }
   n.context->Unmap(n.staging[view_index], 0);
@@ -1265,15 +1919,9 @@ void RealOpenXRBackend::recenter() {
 }
 
 ControllerState RealOpenXRBackend::controllerState(Hand hand) {
-  (void)hand;
-  // M1B boundary: no action set is created yet, so there is no hardware
-  // state to report. Grip/boolean actions via xrCreateActionSpace arrive
-  // with the T4 input wiring; the seam stays neutral until then.
-  ControllerState state;
-  state.grip_pose = IdentityPose();
-  state.pose_valid = false;
-  state.buttons = 0u;
-  return state;
+  std::lock_guard<std::mutex> lock(mutex_);
+  const int index = hand == Hand::kLeft ? 0 : 1;
+  return native_->controller_cache[index];
 }
 
 float RealOpenXRBackend::displayFrequencyHz() const {

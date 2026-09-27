@@ -20,3 +20,7 @@ CTestTestfile.cmake
 [Dd]ebug/
 [Rr]elease/
 x64/
+
+# Machine-local indexing and agent state
+.codebase-memory/
+.empryo/
