@@ -1,6 +1,12 @@
 # CatalystVR changelog
 
-## Unreleased — 1.5.1.14-alpha
+## Unreleased — 1.5.1.15-alpha
+
+- Added retail archive asset-index evidence for Faith and shared Catalyst
+  skeleton packages, including Data/Patch layer coverage and the verified
+  executable fingerprint.
+- Kept the evidence explicitly separate from the guarded native bone writer;
+  package names do not authorize a runtime palette or joint map.
 
 - Added `fingerprint_executable.ps1`, an offline utility that emits the exact
   executable fingerprint format required by reviewed native contracts without
