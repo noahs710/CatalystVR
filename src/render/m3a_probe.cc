@@ -2427,12 +2427,12 @@ HRESULT STDMETHODCALLTYPE HookPresent(IDXGISwapChain* self, UINT sync,
   // before forwarding Present. The XR worker consumes this asynchronously.
   if (auto* capture =
           g_live_capture.load(std::memory_order_acquire); capture != nullptr) {
-    // Prefer the nonblocking shared-GPU path. While its registration is still
-    // opening (or when capability checks fail), retain the established CPU
-    // transport as a safe fallback.
-    if (capture->captureGpu(self)) {
-      // Published directly to the XR worker; no CPU readback this Present.
-    } else if (temporal_stereo) {
+    // Temporal stereo must capture the two eye images separately. The shared
+    // GPU path is a mono-frame transport and must not consume this branch,
+    // otherwise successful GPU registration silently prevents captureStereo
+    // from ever forming a pair. Normal performance mode retains the
+    // nonblocking GPU path and its CPU fallback.
+    if (temporal_stereo) {
       const std::uint64_t epoch =
           g_stereo_pair_epoch.load(std::memory_order_acquire);
       const std::uint64_t pose_sequence =
@@ -2452,6 +2452,8 @@ HRESULT STDMETHODCALLTYPE HookPresent(IDXGISwapChain* self, UINT sync,
         }
         g_stereo_eye.store(0, std::memory_order_release);
       }
+    } else if (capture->captureGpu(self)) {
+      // Published directly to the XR worker; no CPU readback this Present.
     } else {
       capture->capture(self);
     }
