@@ -55,6 +55,12 @@ int main() {
   ok &= Check(!StereoFrameValid(*empty),
               "zero-sized eye rejected");
 
+  auto mismatched_dimensions = Make(7, 7, 10, 20);
+  mismatched_dimensions->width[1] = 4;
+  mismatched_dimensions->pixels_rgba[1].resize(16);
+  ok &= Check(!StereoFrameValid(*mismatched_dimensions),
+              "mismatched eye dimensions rejected");
+
   mecvr::openxr::StereoMailbox mailbox(1);
   ok &= Check(mailbox.tryPublish(frame), "publish valid frame");
   ok &= Check(mailbox.consumeNewest() != nullptr, "consume newest frame");

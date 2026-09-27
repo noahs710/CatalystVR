@@ -92,6 +92,10 @@ class M6EpochGate {
 };
 
 inline bool StereoFrameValid(const StereoFrame& frame) {
+  if (frame.width[0] != frame.width[1] ||
+      frame.height[0] != frame.height[1]) {
+    return false;
+  }
   for (int eye = 0; eye < 2; ++eye) {
     if (frame.width[eye] == 0 || frame.height[eye] == 0 ||
         frame.pixels_rgba[eye].empty()) {
