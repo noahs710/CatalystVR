@@ -409,6 +409,7 @@ struct PendingMap {
   UINT size = 0;
   UINT bind_flags = 0;
   CbRecord* cb = nullptr;
+  bool writable = true;
   bool used = false;
 };
 PendingMap g_pending[kMaxPendingMaps];
@@ -592,7 +593,8 @@ void NoteNonCbPalette(ID3D11Resource* res, const PendingMap& pending) {
   }
   g_native_palette_target.observePalette(record->id, candidate, g_present_idx);
 #ifdef MECVR_M3B
-  TryBuildNativePoseWrite(record, pending, candidate, fingerprint);
+  if (pending.writable)
+    TryBuildNativePoseWrite(record, pending, candidate, fingerprint);
 #endif
   if (candidate.matrix_count <= record->matrices) return;
   if (record->matrices == 0) InterlockedIncrement64(&g_palette_candidates);
@@ -1383,6 +1385,31 @@ void STDMETHODCALLTYPE HookUpdate(ID3D11DeviceContext* self,
       }
       if (len > kMaxScanBytes) len = kMaxScanBytes;
       NoteUpload(rec, src, len, "update");
+    } else if (g_palette_discovery_enabled && box == nullptr) {
+      // Frostbite may refresh a structured/SRV skinning buffer with
+      // UpdateSubresource instead of Map/Unmap. Observe that path without
+      // ever forwarding a rewritten source pointer: native writes are only
+      // legal on the mapped, writable path with an explicit contract.
+      ID3D11Buffer* buffer = nullptr;
+      if (SUCCEEDED(res->QueryInterface(__uuidof(ID3D11Buffer),
+                                        reinterpret_cast<void**>(&buffer))) &&
+          buffer != nullptr) {
+        D3D11_BUFFER_DESC desc{};
+        buffer->GetDesc(&desc);
+        buffer->Release();
+        const UINT size = desc.ByteWidth;
+        if (size >= 12 * 48 && size <= 16384 &&
+            (desc.BindFlags & D3D11_BIND_SHADER_RESOURCE) != 0) {
+          PendingMap sample;
+          sample.res = res;
+          sample.pdata = const_cast<void*>(src);
+          sample.size = size;
+          sample.bind_flags = desc.BindFlags;
+          sample.writable = false;
+          NotePaletteResourceSample(res, size, desc.BindFlags);
+          NoteNonCbPalette(res, sample);
+        }
+      }
     }
     LeaveCriticalSection(&g_cb_lock);
   }

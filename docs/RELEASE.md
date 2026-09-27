@@ -70,8 +70,10 @@ usable by the next sub-project's engineers as proven foundation.
   `MECVR_NATIVE_BONE_MAP` automatically enables the bounded capture/correlation
   path; native writes still require every runtime and executable guard. Native
   maps may cover the eight arm joints only, leaving torso/legs game-animated.
-  The expensive discovery path is disabled in normal play and performs no
-  writes unless a reviewed map is supplied.
+  The probe also observes structured SRV buffers refreshed through
+  `UpdateSubresource`; that source path is strictly read-only. The expensive
+  discovery path is disabled in normal play and performs no writes unless a
+  reviewed map is supplied.
 - **Native XR input**: optional OpenXR action set with per-hand grip spaces,
   trigger/squeeze/menu/face buttons, and thumbsticks, sampled from the XR
   worker and neutral on unsupported runtimes.

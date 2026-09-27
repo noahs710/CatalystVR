@@ -1,6 +1,10 @@
 # CatalystVR changelog
 
-## Unreleased — 1.5.1.21-alpha
+## Unreleased — 1.5.1.22-alpha
+
+- Added read-only `UpdateSubresource` observation for structured SRV buffers,
+  covering Catalyst skinning uploads that bypass the existing Map/Unmap probe.
+  The source pointer is never rewritten on this path.
 
 - Native Faith-arm writer now supports verified eight-joint arm maps without
   requiring torso or leg indices; unmapped regions remain game-animated.
