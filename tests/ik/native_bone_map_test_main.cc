@@ -1,6 +1,8 @@
 #include "ik/native_bone_map.h"
 
 #include <cassert>
+#include <cstdio>
+#include <fstream>
 
 int main() {
   using mecvr::ik::BodyJoint;
@@ -33,5 +35,27 @@ int main() {
   const auto duplicate =
       mecvr::ik::ValidateNativeBoneMap(map, observation, 0x1234);
   assert(!duplicate.ready());
+
+  const char* contract_path = "native_bone_map_test.contract";
+  {
+    std::ofstream contract(contract_path);
+    contract << "version=1\n"
+             << "executable_fingerprint=0x1234\n"
+             << "resource_size=4096\n"
+             << "palette_offset=128\n"
+             << "palette_stride=48\n"
+             << "layout=affine3x4\n"
+             << "joint.root=0\n"
+             << "joint.head=4\n"
+             << "joint.left_hand=8\n"
+             << "joint.right_hand=12\n";
+  }
+  NativeBoneMap loaded;
+  assert(mecvr::ik::LoadNativeBoneMap(contract_path, &loaded));
+  assert(loaded.executable_fingerprint == 0x1234);
+  assert(loaded.joint_indices[static_cast<std::size_t>(BodyJoint::kHead)] == 4);
+  assert(!mecvr::ik::LoadNativeBoneMap("missing-native-bone-map.contract",
+                                      &loaded));
+  std::remove(contract_path);
   return 0;
 }

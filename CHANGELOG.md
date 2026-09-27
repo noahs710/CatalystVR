@@ -17,6 +17,10 @@
   temporarily report fewer than two views. Head position now falls back to the
   available view, while stereo state is only published when both eyes exist;
   this prevents invalid eye indexing from dropping the entire motion frame.
+- Added a strict, opt-in native bone-map contract loader. `MECVR_NATIVE_BONE_MAP`
+  can point to a versioned text contract; malformed or incomplete contracts
+  remain rejected by the existing executable/resource/layout/uniqueness gates,
+  while the default path stays fully fail-closed.
 - Verified the Release build and all 35 automated tests.
 - Ran an observe-only retail probe against the supplied executable; the
   menu-phase run was stable but produced no Faith skeleton palette evidence,

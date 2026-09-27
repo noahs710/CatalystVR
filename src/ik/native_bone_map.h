@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <string>
 
 #include "ik/full_body_ik.h"
 #include "render/native_skeleton_adapter.h"
@@ -40,5 +41,10 @@ NativeBoneMapValidation ValidateNativeBoneMap(
     const NativeBoneMap& map,
     const render::NativePaletteObservation& observation,
     std::uint64_t executable_fingerprint);
+
+// Loads a deliberately small, reviewable text contract. Unknown keys and
+// malformed values reject the whole file; callers must still run
+// ValidateNativeBoneMap against live observations before writing anything.
+bool LoadNativeBoneMap(const std::string& path, NativeBoneMap* output);
 
 }  // namespace mecvr::ik

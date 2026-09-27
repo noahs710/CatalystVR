@@ -328,6 +328,10 @@ volatile LONGLONG g_native_pose_write_rejected = 0;
 bool g_palette_discovery_enabled = false;
 mecvr::render::NativeSkeletonAdapter g_native_skeleton_adapter;
 mecvr::render::NativePaletteTargetTracker g_native_palette_target;
+#ifdef MECVR_M3B
+mecvr::ik::NativeBoneMap g_native_bone_map;
+bool g_native_bone_map_loaded = false;
+#endif
 
 // Current GPU state snapshot (stamped on captures).
 ID3D11RenderTargetView* g_rtv0 = nullptr;
@@ -467,7 +471,7 @@ bool TryBuildNativePoseWrite(PaletteResourceRecord* record,
                              const mecvr::render::BonePaletteCandidate& candidate,
                              const std::uint64_t content_fingerprint) {
   const auto target = g_native_palette_target.snapshot();
-  if (!target.verified || record == nullptr ||
+  if (!g_native_bone_map_loaded || !target.verified || record == nullptr ||
       target.resource_id != record->id || pending.pdata == nullptr ||
       pending.size == 0) {
     return false;
@@ -494,6 +498,7 @@ bool TryBuildNativePoseWrite(PaletteResourceRecord* record,
   observation.content_fingerprint = content_fingerprint;
   observation.candidate = candidate;
   mecvr::ik::NativePoseWriteContext context;
+  context.executable_fingerprint = g_native_bone_map.executable_fingerprint;
   context.current_pose_sequence = pose.sequence;
   context.maximum_pose_lag = 2;
   context.observation = observation;
@@ -503,17 +508,15 @@ bool TryBuildNativePoseWrite(PaletteResourceRecord* record,
   context.adapter.content_fingerprint = observation.content_fingerprint;
   context.adapter.candidate = observation.candidate;
 
-  // The default map intentionally contains no indices. This scratch call is
-  // the production seam and validation telemetry, but it cannot mutate the
-  // game's mapped bytes until a title-specific executable/map contract is
-  // supplied and passes every writer gate.
-  mecvr::ik::NativeBoneMap map;
+  // The map is opt-in and loaded from a reviewed title-specific contract.
+  // Without one, the default-constructed map fails every writer gate and the
+  // game's mapped bytes remain untouched.
   constexpr std::size_t kScratchBytes = 65536;
   thread_local std::array<std::uint8_t, kScratchBytes> scratch{};
   const std::size_t source_size =
       pending.size < kScratchBytes ? pending.size : kScratchBytes;
   const auto status = mecvr::ik::RewriteNativePalette(
-      map, context, pose, matrices, pending.pdata, source_size,
+      g_native_bone_map, context, pose, matrices, pending.pdata, source_size,
       scratch.data(), scratch.size());
   if (status == mecvr::ik::NativePoseWriteStatus::kApplied) {
     std::memcpy(pending.pdata, scratch.data(), source_size);
@@ -3333,6 +3336,18 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID reserved) {
     LogF("m3b runtime pacing/AFR preservation: %s\n",
          g_preserve_runtime_pacing ? "enabled (temporal stereo suppressed)"
                                     : "disabled");
+    char native_map_path[512] = {};
+    const DWORD native_map_len = GetEnvironmentVariableA(
+        "MECVR_NATIVE_BONE_MAP", native_map_path,
+        static_cast<DWORD>(sizeof(native_map_path)));
+    if (native_map_len > 0 && native_map_len < sizeof(native_map_path)) {
+      g_native_bone_map_loaded = mecvr::ik::LoadNativeBoneMap(
+          native_map_path, &g_native_bone_map);
+      LogF("m3b native bone contract: %s (%s)\n",
+           g_native_bone_map_loaded ? "loaded" : "rejected", native_map_path);
+    } else {
+      LogF("m3b native bone contract: disabled (MECVR_NATIVE_BONE_MAP unset)\n");
+    }
     char body_overlay[8] = {};
     g_body_overlay_enabled =
         GetEnvironmentVariableA("MECVR_ENABLE_BODY_OVERLAY", body_overlay,
