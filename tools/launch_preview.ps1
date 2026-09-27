@@ -25,12 +25,13 @@ param(
   [ValidateSet('view', 'local')] [string]$QuadSpace = 'view',
   [ValidateSet('smooth', 'snap')] [string]$TurnMode = 'smooth',
   [ValidateSet('balanced', 'performance', 'diagnostic')] [string]$PerformanceMode = 'performance',
+  [switch]$PreserveRuntimePacing,
   [float]$UnitsPerMeter = 100.0
 )
 
 $ErrorActionPreference = 'Stop'
 if ([string]::IsNullOrWhiteSpace($PackageRoot)) {
-  $PackageRoot = Join-Path $PSScriptRoot '..\dist\MECVR-1.4.1.1-alpha'
+  $PackageRoot = Join-Path $PSScriptRoot '..\dist\MECVR-1.5.1.1-alpha'
 }
 $root = (Resolve-Path $PackageRoot).Path
 $bin = Join-Path $root 'bin'
@@ -71,6 +72,7 @@ $env:MECVR_PLAY_MOTION_CLIP = $PlayMotionClip
 $env:MECVR_DISCOVER_PALETTES = if ($DiscoverPalettes) { '1' } else { '0' }
 $env:MECVR_TURN_MODE = $TurnMode
 $env:MECVR_PERFORMANCE_MODE = $PerformanceMode
+$env:MECVR_PRESERVE_RUNTIME_PACING = if ($PreserveRuntimePacing) { '1' } else { '0' }
 $env:MECVR_UNITS_PER_METER = $UnitsPerMeter.ToString([Globalization.CultureInfo]::InvariantCulture)
 # Theatre presentation requires an explicit diagnostic argument and is never
 # inherited from a stale process environment.

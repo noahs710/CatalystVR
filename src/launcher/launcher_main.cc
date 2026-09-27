@@ -41,6 +41,7 @@ enum : int {
   kMotionClipBrowse = 122,
   kMotionPlaybackBrowse = 123,
   kPerformance = 130,
+  kRuntimePacing = 131,
 };
 
 HWND g_game_path = nullptr;
@@ -66,6 +67,7 @@ HWND g_frosty_pack = nullptr;
 HWND g_motion_clip = nullptr;
 HWND g_motion_playback = nullptr;
 HWND g_performance = nullptr;
+HWND g_runtime_pacing = nullptr;
 HWND g_status = nullptr;
 HFONT g_font = nullptr;
 std::wstring g_root;
@@ -161,6 +163,7 @@ void SaveSettings() {
   WriteSetting(L"RecordMotionClip", Text(g_motion_clip));
   WriteSetting(L"PlayMotionClip", Text(g_motion_playback));
   WriteSetting(L"PerformanceMode", Text(g_performance));
+  WriteSetting(L"PreserveRuntimePacing", Checked(g_runtime_pacing) ? L"1" : L"0");
 }
 
 void LoadSettings() {
@@ -223,6 +226,9 @@ void LoadSettings() {
   SetWindowTextW(g_motion_playback,
                  ReadSetting(L"PlayMotionClip", L"").c_str());
   SelectCombo(g_performance, ReadSetting(L"PerformanceMode", L"performance"));
+  SendMessageW(g_runtime_pacing, BM_SETCHECK,
+               ReadSetting(L"PreserveRuntimePacing", L"1") == L"1"
+                   ? BST_CHECKED : BST_UNCHECKED, 0);
 }
 
 void BrowseGame(HWND owner) {
@@ -352,6 +358,7 @@ void Launch() {
                          L" -MonoLayer " + Quote(Text(g_layer)) +
                          L" -QuadSpace " + Quote(Text(g_space)) +
                          L" -PerformanceMode " + Quote(Text(g_performance));
+  if (Checked(g_runtime_pacing)) command += L" -PreserveRuntimePacing";
   command += L" -LaunchBackend " + Quote(Text(g_backend));
   if (Text(g_backend) == L"frosty") {
     command += L" -FrostyPath " + Quote(Text(g_frosty_path)) +
@@ -529,8 +536,9 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam,
       Label(window, L"vault", 170, 638, 65, 18);
       Label(window, L"climb", 300, 638, 65, 18);
       Label(window, L"slide", 430, 638, 65, 18);
-      Label(window, L"Presentation controls are safe defaults; diagnostics never write game buffers.",
-            300, 410, 250, 18);
+      g_runtime_pacing = Button(
+          window, L"Preserve runtime pacing / AFR", kRuntimePacing, 300, 410,
+          250, 30, BS_AUTOCHECKBOX);
       Label(window, L"Backend", 30, 430, 90, 22);
       g_backend = CreateWindowW(L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE |
                                                    CBS_DROPDOWNLIST,
