@@ -47,6 +47,9 @@ int main() {
   observation.content_fingerprint = 0xdef;
   assert(!adapter.observe(observation));
   assert(adapter.snapshot().verified);
+  // A duplicate report in the same present is harmless.
+  assert(!adapter.observe(observation));
+  assert(adapter.snapshot().verified);
 
   candidate.offset = 128;
   observation.candidate = candidate;

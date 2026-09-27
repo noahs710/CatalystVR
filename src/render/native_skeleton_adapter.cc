@@ -21,11 +21,26 @@ bool NativeSkeletonAdapter::observe(
   const BonePaletteCandidate& candidate = observation.candidate;
   if (!candidate.valid() || candidate.matrix_count < minimum_matrices_ ||
       observation.present_index == 0 ||
-      (last_frame_ != 0 && observation.present_index <= last_frame_)) {
+      (last_frame_ != 0 && observation.present_index < last_frame_)) {
     state_.candidate = {};
     state_.stable_observations = 0;
     state_.verified = false;
     last_frame_ = observation.present_index;
+    return false;
+  }
+
+  // CB/SRV hooks can report the same resource more than once during one
+  // present. Treat an identical same-frame observation as a duplicate rather
+  // than invalidating an otherwise stable candidate.
+  if (last_frame_ != 0 && observation.present_index == last_frame_) {
+    const bool duplicate =
+        state_.constant_buffer_id == observation.constant_buffer_id &&
+        state_.resource_size == observation.resource_size &&
+        state_.candidate.valid() && SameLayout(state_.candidate, candidate);
+    if (duplicate) return false;
+    state_.candidate = {};
+    state_.stable_observations = 0;
+    state_.verified = false;
     return false;
   }
 

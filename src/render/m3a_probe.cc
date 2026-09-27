@@ -749,7 +749,11 @@ void ScanAndLogCb(CbRecord* rec, const void* data, std::size_t len,
   if (g_palette_discovery_enabled && palette.valid()) {
     mecvr::render::NativePaletteObservation observation;
     observation.present_index = g_present_idx;
-    observation.constant_buffer_id = rec->id;
+    auto* palette_record = PaletteRecordFor(
+        reinterpret_cast<ID3D11Resource*>(rec->buf), rec->size,
+        D3D11_BIND_CONSTANT_BUFFER);
+    observation.constant_buffer_id =
+        palette_record != nullptr ? palette_record->id : rec->id;
     observation.resource_size = rec->size;
     observation.content_fingerprint = content_fingerprint;
     observation.candidate = palette;
