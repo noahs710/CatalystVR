@@ -64,8 +64,10 @@ usable by the next sub-project's engineers as proven foundation.
   the solved elbow/wrist/hand chain, then recover smoothly while preserving
   controller aim and replay determinism.
 - **Skeleton discovery**: opt-in `MECVR_DISCOVER_PALETTES=1` diagnostics scan
-  bounded mapped SRV buffers for 3x4/4x4 bone palettes. The expensive discovery
-  path is disabled in normal play and performs no writes.
+  bounded mapped SRV/CB buffers for 3x4/4x4 bone palettes. Verification keys
+  off resource identity and layout, so animated matrix contents may change
+  without invalidating the candidate. The expensive discovery path is disabled
+  in normal play and performs no writes.
 - **Native XR input**: optional OpenXR action set with per-hand grip spaces,
   trigger/squeeze/menu/face buttons, and thumbsticks, sampled from the XR
   worker and neutral on unsupported runtimes.

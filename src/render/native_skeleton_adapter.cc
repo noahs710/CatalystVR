@@ -29,10 +29,12 @@ bool NativeSkeletonAdapter::observe(
     return false;
   }
 
+  // Animated matrices change their contents every frame. Resource identity,
+  // byte size, and classified layout are the stable palette contract; the
+  // fingerprint remains current-frame evidence only.
   const bool same_source =
       state_.constant_buffer_id == observation.constant_buffer_id &&
-      state_.resource_size == observation.resource_size &&
-      state_.content_fingerprint == observation.content_fingerprint;
+      state_.resource_size == observation.resource_size;
   if (state_.candidate.valid() && SameLayout(state_.candidate, candidate) &&
       same_source) {
     ++state_.stable_observations;

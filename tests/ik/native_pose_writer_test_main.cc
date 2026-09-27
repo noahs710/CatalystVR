@@ -86,6 +86,10 @@ int main() {
   assert(ReadFloat(valid.output, 128 + 48 + 3 * sizeof(float)) == 1.0f);
   assert(valid.output[128 + 21 * 48] == 0x5a);
 
+  Fixture animated;
+  animated.context.observation.content_fingerprint = 0x11223344;
+  assert(animated.rewrite() == NativePoseWriteStatus::kApplied);
+
   Fixture unverified;
   unverified.context.adapter.verified = false;
   assert(unverified.rewrite() == NativePoseWriteStatus::kUnverifiedAdapter);

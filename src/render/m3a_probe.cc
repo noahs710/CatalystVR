@@ -382,6 +382,7 @@ struct CbRecord {
 
 CbRecord g_cbtable[kCbTableSize];
 UINT g_next_cb_id = 1;  // 0 = none.
+UINT g_next_palette_id = 1;
 CRITICAL_SECTION g_cb_lock;
 
 struct PendingMap {
@@ -395,9 +396,11 @@ struct PendingMap {
 PendingMap g_pending[kMaxPendingMaps];
 
 void LogF(const char* fmt, ...);
+std::uint64_t HashWords64(const void* data, std::size_t len);
 
 struct PaletteResourceRecord {
   ID3D11Resource* res = nullptr;
+  UINT id = 0;
   UINT size = 0;
   UINT bind_flags = 0;
   UINT offset = 0;
@@ -422,6 +425,8 @@ PaletteResourceRecord* PaletteRecordFor(ID3D11Resource* res, UINT size,
     if (record.res == res) return &record;
     if (record.res == nullptr) {
       record.res = res;
+      record.id = g_next_palette_id++;
+      if (g_next_palette_id == 0) g_next_palette_id = 1;
       record.size = size;
       record.bind_flags = bind_flags;
       return &record;
@@ -473,6 +478,23 @@ void NoteNonCbPalette(ID3D11Resource* res, const PendingMap& pending) {
   const auto candidate =
       mecvr::render::ClassifyBonePalette(pending.pdata, scan);
   if (!candidate.valid()) return;
+  const std::uint64_t fingerprint = HashWords64(pending.pdata, scan);
+  mecvr::render::NativePaletteObservation observation;
+  observation.present_index = g_present_idx;
+  observation.constant_buffer_id = record->id;
+  observation.resource_size = record->size;
+  observation.content_fingerprint = fingerprint;
+  observation.candidate = candidate;
+  if (g_native_skeleton_adapter.observe(observation)) {
+    const auto verified = g_native_skeleton_adapter.snapshot();
+    LogF("m3a native skeleton SRV palette verified id=%u off=%zu stride=%zu "
+         "matrices=%zu layout=%u observations=%llu present=%llu phase=%s\n",
+         record->id, verified.candidate.offset, verified.candidate.stride,
+         verified.candidate.matrix_count,
+         static_cast<unsigned>(verified.candidate.layout),
+         static_cast<unsigned long long>(verified.stable_observations),
+         static_cast<unsigned long long>(g_present_idx), g_phase);
+  }
   if (candidate.matrix_count <= record->matrices) return;
   if (record->matrices == 0) InterlockedIncrement64(&g_palette_candidates);
   record->offset = static_cast<UINT>(candidate.offset);

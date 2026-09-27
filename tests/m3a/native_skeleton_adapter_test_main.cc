@@ -41,6 +41,13 @@ int main() {
   assert(verified.stable_observations == 3);
   assert(verified.candidate.offset == 64);
 
+  // Animated matrices change their content fingerprint while the resource
+  // and palette layout remain stable; verification must survive that change.
+  observation.present_index = 13;
+  observation.content_fingerprint = 0xdef;
+  assert(!adapter.observe(observation));
+  assert(adapter.snapshot().verified);
+
   candidate.offset = 128;
   observation.candidate = candidate;
   observation.present_index = 13;

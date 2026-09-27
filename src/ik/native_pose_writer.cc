@@ -19,7 +19,8 @@ bool AdapterMatches(const NativePoseWriteContext& context) {
   return adapter.verified && adapter.constant_buffer_id != 0 &&
          adapter.constant_buffer_id == observation.constant_buffer_id &&
          adapter.resource_size == observation.resource_size &&
-         adapter.content_fingerprint == observation.content_fingerprint &&
+         adapter.content_fingerprint != 0 &&
+         observation.content_fingerprint != 0 &&
          SameCandidate(adapter.candidate, observation.candidate);
 }
 
