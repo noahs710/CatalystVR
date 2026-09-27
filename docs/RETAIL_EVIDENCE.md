@@ -21,3 +21,13 @@ observed scene. It did not produce a draw-correlation sample or a stable
 semantic Faith skeleton contract. Native pose writes therefore remain disabled
 unless an exact executable/resource/layout/joint-index contract is supplied.
 Palette order is not treated as bone order.
+
+## Context provenance follow-up
+
+A second run entered the subsequent menu phase without an HMD and reached
+approximately 195 FPS with 178 tracked constant-buffer records and one
+palette-shaped candidate. The bounded provenance counters remained
+`ctx_draws=0`, `ctx_finishes=0`, `ctx_executes=0`, and `d12exec=0`, while
+`clear=3` and `flush=3` were observed. This rules out the currently hooked
+immediate/deferred D3D11 draw and command-list paths for that phase; it does
+not justify treating the palette candidate as a semantic Faith skeleton.

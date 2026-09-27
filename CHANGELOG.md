@@ -1,6 +1,6 @@
 # CatalystVR changelog
 
-## Unreleased — 1.5.1.7-alpha
+## Unreleased — 1.5.1.8-alpha
 
 - Added a persisted launcher control for preserving runtime-owned frame pacing,
   AFR, and compositor frame generation.
@@ -38,6 +38,9 @@
 - Added bounded per-context D3D11 draw/finish/execute telemetry to distinguish
   missing scene draw hooks from command-list execution gaps during autonomous
   retail investigation.
+- Recorded the follow-up retail result: resource updates and presents occur,
+  but no D3D11/D3D12 draw or command-list execution reaches the current hook
+  surface in the observed phase, so palette candidates remain non-semantic.
 - Verified the Release build and all 35 automated tests.
 - Ran an observe-only retail probe against the supplied executable; the
   menu-phase run was stable but produced no Faith skeleton palette evidence,
