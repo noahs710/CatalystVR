@@ -2868,21 +2868,31 @@ unsigned __stdcall PoseWorkerProc(void*) {
     motion_right.trigger = right_state.trigger_value;
     motion_right.grip = right_state.squeeze_value;
     motion_right.palm_open = right_state.squeeze_value < 0.20f;
+    const bool has_stereo_views = located.views.size() >= 2;
+    const bool has_mono_view = !located.views.empty();
     mecvr::ik::FullBodyInput body_input;
     body_input.sequence = timing.frame_index;
     body_input.sample_time_ns = located.sample_time_ns;
-    body_input.head.valid = located.sample_time_ns != 0;
-    body_input.head.position = {
-        0.5 * (located.views[0].pose.position.x +
-               located.views[1].pose.position.x),
-        0.5 * (located.views[0].pose.position.y +
-               located.views[1].pose.position.y),
-        0.5 * (located.views[0].pose.position.z +
-               located.views[1].pose.position.z)};
-    body_input.head.orientation = {located.views[0].pose.orientation.x,
-                                   located.views[0].pose.orientation.y,
-                                   located.views[0].pose.orientation.z,
-                                   located.views[0].pose.orientation.w};
+    body_input.head.valid = located.sample_time_ns != 0 && has_mono_view;
+    if (has_stereo_views) {
+      body_input.head.position = {
+          0.5 * (located.views[0].pose.position.x +
+                 located.views[1].pose.position.x),
+          0.5 * (located.views[0].pose.position.y +
+                 located.views[1].pose.position.y),
+          0.5 * (located.views[0].pose.position.z +
+                 located.views[1].pose.position.z)};
+    } else if (has_mono_view) {
+      body_input.head.position = {located.views[0].pose.position.x,
+                                  located.views[0].pose.position.y,
+                                  located.views[0].pose.position.z};
+    }
+    if (has_mono_view) {
+      body_input.head.orientation = {located.views[0].pose.orientation.x,
+                                     located.views[0].pose.orientation.y,
+                                     located.views[0].pose.orientation.z,
+                                     located.views[0].pose.orientation.w};
+    }
     body_input.left_hand = motion_left;
     body_input.right_hand = motion_right;
     const mecvr::openxr::BodyTrackingSnapshot tracked_body =
@@ -2998,29 +3008,31 @@ unsigned __stdcall PoseWorkerProc(void*) {
       LogF("m3b recenter requested generation=%llu\n",
            static_cast<unsigned long long>(space_generation));
     }
-    if (located.sample_time_ns != 0) {
+    if (located.sample_time_ns != 0 && has_mono_view) {
       mecvr::camera::XRFramePoseSnapshot snapshot;
       snapshot.sequence = ++sequence;
       snapshot.predicted_display_time_ns = timing.predicted_display_time_ns;
       snapshot.predicted_display_period_ns = timing.predicted_display_period_ns;
-      snapshot.position_valid = true;
-      snapshot.orientation_valid = true;
+      snapshot.position_valid = body_input.head.valid;
+      snapshot.orientation_valid = body_input.head.valid;
       snapshot.space_generation = space_generation;
       snapshot.head = located.views[0].pose;
       // OpenXR returns eye poses here; use their midpoint for the game
       // camera anchor so temporal stereo applies symmetric -IPD/+IPD
       // translation instead of treating the left eye as the head origin.
-      snapshot.head.position.x =
-          0.5f * (located.views[0].pose.position.x +
-                  located.views[1].pose.position.x);
-      snapshot.head.position.y =
-          0.5f * (located.views[0].pose.position.y +
-                  located.views[1].pose.position.y);
-      snapshot.head.position.z =
-          0.5f * (located.views[0].pose.position.z +
-                  located.views[1].pose.position.z);
+      if (has_stereo_views) {
+        snapshot.head.position.x =
+            0.5f * (located.views[0].pose.position.x +
+                    located.views[1].pose.position.x);
+        snapshot.head.position.y =
+            0.5f * (located.views[0].pose.position.y +
+                    located.views[1].pose.position.y);
+        snapshot.head.position.z =
+            0.5f * (located.views[0].pose.position.z +
+                    located.views[1].pose.position.z);
+      }
       snapshot.views[0] = located.views[0];
-      snapshot.views[1] = located.views[1];
+      snapshot.views[1] = has_stereo_views ? located.views[1] : located.views[0];
       snapshot.publish_time_ns = SteadyNs();
       g_pose_mailbox.publish(snapshot);
       g_xr_pose_sequence.store(snapshot.sequence, std::memory_order_release);

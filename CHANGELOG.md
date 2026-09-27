@@ -13,6 +13,10 @@
   pose-matrix builder. The seam records native-pose write attempts and
   rejection reasons, but remains fail-closed until a validated title-specific
   skeleton map and executable/layout contract are available.
+- Hardened XR pose publication for startup, focus loss, and runtimes that
+  temporarily report fewer than two views. Head position now falls back to the
+  available view, while stereo state is only published when both eyes exist;
+  this prevents invalid eye indexing from dropping the entire motion frame.
 - Verified the Release build and all 35 automated tests.
 - Ran an observe-only retail probe against the supplied executable; the
   menu-phase run was stable but produced no Faith skeleton palette evidence,
