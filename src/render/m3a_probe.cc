@@ -183,6 +183,9 @@ struct CtxEntry {
   void** vtable = nullptr;
   // Sized by kH_Count (see static_assert below the CtxHook enum).
   void* orig[27] = {};
+  volatile LONG draw_calls = 0;
+  volatile LONG finish_calls = 0;
+  volatile LONG execute_calls = 0;
 };
 
 enum CtxHook {
@@ -1012,6 +1015,12 @@ CtxEntry* EntryFor(void** vtable) {
   return nullptr;
 }
 
+void NoteContextDraw(ID3D11DeviceContext* self) {
+  if (self == nullptr) return;
+  CtxEntry* entry = EntryFor(*reinterpret_cast<void***>(self));
+  if (entry != nullptr) InterlockedIncrement(&entry->draw_calls);
+}
+
 DeviceEntry* DeviceFor(void** vtable) {
   const LONG count = g_device_count;
   for (LONG i = 0; i < count && i < kMaxDeviceVtables; ++i) {
@@ -1195,6 +1204,7 @@ void STDMETHODCALLTYPE HookDrawIndexed(ID3D11DeviceContext* self, UINT count,
                            ? reinterpret_cast<DrawIndexedFn>(e->orig[kH_DrawIndexed])
                            : nullptr;
   if (orig != nullptr) orig(self, count, start, base);
+  NoteContextDraw(self);
   if (g_armed && g_palette_discovery_enabled) {
     const auto note_srv = [](ID3D11ShaderResourceView* srv) {
       if (srv == nullptr) return;
@@ -1231,6 +1241,7 @@ void STDMETHODCALLTYPE HookDraw(ID3D11DeviceContext* self, UINT count,
   DrawFn orig =
       e != nullptr ? reinterpret_cast<DrawFn>(e->orig[kH_Draw]) : nullptr;
   if (orig != nullptr) orig(self, count, start);
+  NoteContextDraw(self);
   if (g_armed && g_palette_discovery_enabled) {
     const auto note_srv = [](ID3D11ShaderResourceView* srv) {
       if (srv == nullptr) return;
@@ -1270,6 +1281,7 @@ void STDMETHODCALLTYPE HookDrawIndexedInst(ID3D11DeviceContext* self,
                                      e->orig[kH_DrawIndexedInstanced])
                                : nullptr;
   if (orig != nullptr) orig(self, cpi, inst, start, base, si);
+  NoteContextDraw(self);
   InterlockedIncrement64(&g_draws);
   InterlockedIncrement64(&g_draw_idx);
 }
@@ -1281,6 +1293,7 @@ void STDMETHODCALLTYPE HookDrawInst(ID3D11DeviceContext* self, UINT cpv,
                         ? reinterpret_cast<DrawInstFn>(e->orig[kH_DrawInstanced])
                         : nullptr;
   if (orig != nullptr) orig(self, cpv, inst, start, si);
+  NoteContextDraw(self);
   InterlockedIncrement64(&g_draws);
   InterlockedIncrement64(&g_draw_idx);
 }
@@ -1291,6 +1304,7 @@ void STDMETHODCALLTYPE HookDrawAuto(ID3D11DeviceContext* self) {
                         ? reinterpret_cast<DrawAutoFn>(e->orig[kH_DrawAuto])
                         : nullptr;
   if (orig != nullptr) orig(self);
+  NoteContextDraw(self);
   InterlockedIncrement64(&g_draws);
   InterlockedIncrement64(&g_draw_idx);
 }
@@ -1305,6 +1319,7 @@ void STDMETHODCALLTYPE HookDrawIndexedInstIndirect(ID3D11DeviceContext* self,
                 e->orig[kH_DrawIndexedInstancedIndirect])
           : nullptr;
   if (orig != nullptr) orig(self, args, offset);
+  NoteContextDraw(self);
   InterlockedIncrement64(&g_draws);
   InterlockedIncrement64(&g_draw_idx);
 }
@@ -1319,6 +1334,7 @@ void STDMETHODCALLTYPE HookDrawInstIndirect(ID3D11DeviceContext* self,
                 e->orig[kH_DrawInstancedIndirect])
           : nullptr;
   if (orig != nullptr) orig(self, args, offset);
+  NoteContextDraw(self);
   InterlockedIncrement64(&g_draws);
   InterlockedIncrement64(&g_draw_idx);
 }
@@ -1631,6 +1647,7 @@ void STDMETHODCALLTYPE HookExecute(ID3D11DeviceContext* self,
                        ? reinterpret_cast<ExecuteFn>(e->orig[kH_Execute])
                        : nullptr;
   if (orig != nullptr) orig(self, list, restore);
+  if (e != nullptr) InterlockedIncrement(&e->execute_calls);
   if (g_armed) {
     const LONGLONG seq = InterlockedIncrement64(&g_execl_total);
     if (g_execl_this_window < kMaxExeclPerWindow) {
@@ -1680,6 +1697,7 @@ HRESULT STDMETHODCALLTYPE HookFinishCommandList(ID3D11DeviceContext* self,
                           e->orig[kH_FinishCommandList])
                     : nullptr;
   const HRESULT hr = orig != nullptr ? orig(self, restore, out) : E_UNEXPECTED;
+  if (e != nullptr) InterlockedIncrement(&e->finish_calls);
   InterlockedIncrement64(&g_finish_lists);
   return hr;
 }
@@ -2298,12 +2316,20 @@ void DumpStatus(const char* tag, std::int64_t now_ns, std::int64_t first_ns) {
   LONGLONG native_pose_attempts = 0;
   LONGLONG native_pose_applied = 0;
   LONGLONG native_pose_rejected = 0;
+  LONGLONG ctx_draws = 0;
+  LONGLONG ctx_finishes = 0;
+  LONGLONG ctx_executes = 0;
 #ifdef MECVR_M3B
   camera_overrides = g_camera_overrides;
   native_pose_attempts = g_native_pose_write_attempts;
   native_pose_applied = g_native_pose_write_applied;
   native_pose_rejected = g_native_pose_write_rejected;
 #endif
+  for (LONG i = 0; i < g_ctx_count && i < kMaxCtxVtables; ++i) {
+    ctx_draws += InterlockedCompareExchange(&g_ctx[i].draw_calls, 0, 0);
+    ctx_finishes += InterlockedCompareExchange(&g_ctx[i].finish_calls, 0, 0);
+    ctx_executes += InterlockedCompareExchange(&g_ctx[i].execute_calls, 0, 0);
+  }
   LogF("%s presents=%llu draws_last=%lld draw_idx=%lld cbs=%lld cands=%lld caps=%lld "
        "drops=%llu ovfl=%lld ovh_us=%.1f max_us=%.1f rate=%.1f state_fail=%lld "
        "dxgi_pc=%u dxgi_last=%u main=%s umatch=%lld execl=%lld exdrop=%lld "
@@ -2311,6 +2337,7 @@ void DumpStatus(const char* tag, std::int64_t now_ns, std::int64_t first_ns) {
        "clear=%lld flush=%lld finish=%lld ik=%lld ik_valid=%lld body=%lld palettes=%lld "
        "camera_overrides=%lld overlay=%lld native_pose_attempts=%lld "
        "native_pose_applied=%lld native_pose_rejected=%lld "
+       "ctx_draws=%lld ctx_finishes=%lld ctx_executes=%lld "
        "phase=%s\n",
        tag, g_present_idx, g_draws_last_frame, g_draw_idx, g_cb_observed,
        g_candidates,
@@ -2321,7 +2348,8 @@ void DumpStatus(const char* tag, std::int64_t now_ns, std::int64_t first_ns) {
        g_d12_draws, g_clear_states, g_flushes, g_finish_lists, g_ik_frames,
        g_ik_valid_frames, g_body_overlay_frames, g_palette_candidates,
        camera_overrides, g_body_overlay_frames, native_pose_attempts,
-       native_pose_applied, native_pose_rejected, g_phase);
+       native_pose_applied, native_pose_rejected, ctx_draws, ctx_finishes,
+       ctx_executes, g_phase);
   const char* names[] = {"setcb", "shader", "update", "map", "unmap",
                          "om",    "rs",     "present", "execl"};
   for (int i = 0; i < 9; ++i) {

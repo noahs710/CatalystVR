@@ -1,6 +1,6 @@
 # CatalystVR changelog
 
-## Unreleased — 1.5.1.6-alpha
+## Unreleased — 1.5.1.7-alpha
 
 - Added a persisted launcher control for preserving runtime-owned frame pacing,
   AFR, and compositor frame generation.
@@ -35,6 +35,9 @@
   silently disabling the requested per-eye producer.
 - Hardened stereo submission validation to reject unequal left/right image
   dimensions before swapchain upload, preventing geometric eye misalignment.
+- Added bounded per-context D3D11 draw/finish/execute telemetry to distinguish
+  missing scene draw hooks from command-list execution gaps during autonomous
+  retail investigation.
 - Verified the Release build and all 35 automated tests.
 - Ran an observe-only retail probe against the supplied executable; the
   menu-phase run was stable but produced no Faith skeleton palette evidence,
