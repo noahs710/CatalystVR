@@ -568,8 +568,12 @@ void NoteNonCbPalette(ID3D11Resource* res, const PendingMap& pending) {
   // normal alpha path is read-only; hashing every candidate upload (up to
   // 64 KiB per observation) needlessly adds CPU and memory traffic to the
   // render thread.
+  bool native_map_loaded = false;
+#ifdef MECVR_M3B
+  native_map_loaded = g_native_bone_map_loaded;
+#endif
   const std::uint64_t fingerprint =
-      g_native_bone_map_loaded ? HashWords64(pending.pdata, scan) : 0;
+      native_map_loaded ? HashWords64(pending.pdata, scan) : 0;
   mecvr::render::NativePaletteObservation observation;
   observation.present_index = g_present_idx;
   observation.constant_buffer_id = record->id;
@@ -3112,13 +3116,22 @@ unsigned __stdcall PoseWorkerProc(void*) {
       const auto stats = worker.stats();
       const auto diagnostics = backend.diagnostics();
       LogF("m3b transport gpu_submit=%llu gpu_fallback=%llu gpu_reg_fail=%llu "
-           "gpu_timeout=%llu cpu_submit=%llu upload_fail=%llu active=%s\n",
+           "gpu_timeout=%llu cpu_submit=%llu upload_fail=%llu "
+           "stereo_submit=%llu stereo_reject=%llu upload_us=%lld "
+           "upload_max_us=%lld present_hz=%.2f xr_hz=%.2f age_ms=%.2f "
+           "active=%s\n",
            static_cast<unsigned long long>(stats.gpu_submitted),
            static_cast<unsigned long long>(stats.gpu_fallback),
            static_cast<unsigned long long>(stats.gpu_registration_failed),
            static_cast<unsigned long long>(diagnostics.gpu_acquire_timeout),
            static_cast<unsigned long long>(stats.submitted_new),
            static_cast<unsigned long long>(stats.upload_failed),
+           static_cast<unsigned long long>(stats.stereo_submitted),
+           static_cast<unsigned long long>(stats.stereo_rejected),
+           static_cast<long long>(stats.upload_ns / 1000),
+           static_cast<long long>(stats.upload_max_ns / 1000),
+           stats.present_rate_hz, stats.xr_rate_hz,
+           static_cast<double>(stats.last_frame_age_ns) / 1.0e6,
            diagnostics.gpu_transport_active ? "yes" : "no");
     }
   }

@@ -5,12 +5,12 @@
 // beginFrame, locateViews, swapchain acquire/release, endFrame. The game
 // Present thread never calls into this worker and never waits on it.
 //
-// Per XR tick the worker consumes the newest mailbox frame and submits
-// the SAME image to both eyes (mono: no eye offsets, no stereo —
-// locateViews poses are observed for diagnostics only, never used to
-// alter the image). With no new frame it re-shows the last submitted
-// frame (reused/duplicated); with nothing ever captured it ends the
-// frame unsubmitted. Full instrumentation lands in M2bStats.
+// Per XR tick the worker consumes either a validated temporal stereo pair or
+// the newest mono mailbox frame. Mono fallback submits the same image to both
+// eyes; stereo pairs carry separate eye images and are accepted only when
+// their epoch/pose gate passes. With no new frame it re-shows the last
+// submitted frame; with nothing ever captured it ends the frame unsubmitted.
+// Full instrumentation lands in M2bStats.
 
 #include <cstdint>
 #include <functional>
