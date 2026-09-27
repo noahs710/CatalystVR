@@ -24,6 +24,7 @@ param(
   [ValidateSet('quad', 'projection')] [string]$MonoLayer = 'projection',
   [ValidateSet('view', 'local')] [string]$QuadSpace = 'view',
   [ValidateSet('smooth', 'snap')] [string]$TurnMode = 'smooth',
+  [ValidateSet('balanced', 'performance', 'diagnostic')] [string]$PerformanceMode = 'performance',
   [float]$UnitsPerMeter = 100.0
 )
 
@@ -69,6 +70,7 @@ $env:MECVR_RECORD_MOTION_CLIP = $RecordMotionClip
 $env:MECVR_PLAY_MOTION_CLIP = $PlayMotionClip
 $env:MECVR_DISCOVER_PALETTES = if ($DiscoverPalettes) { '1' } else { '0' }
 $env:MECVR_TURN_MODE = $TurnMode
+$env:MECVR_PERFORMANCE_MODE = $PerformanceMode
 $env:MECVR_UNITS_PER_METER = $UnitsPerMeter.ToString([Globalization.CultureInfo]::InvariantCulture)
 # Theatre presentation requires an explicit diagnostic argument and is never
 # inherited from a stale process environment.

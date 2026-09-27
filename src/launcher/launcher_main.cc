@@ -40,6 +40,7 @@ enum : int {
   kMotionPlayback = 121,
   kMotionClipBrowse = 122,
   kMotionPlaybackBrowse = 123,
+  kPerformance = 130,
 };
 
 HWND g_game_path = nullptr;
@@ -64,6 +65,7 @@ HWND g_frosty_path = nullptr;
 HWND g_frosty_pack = nullptr;
 HWND g_motion_clip = nullptr;
 HWND g_motion_playback = nullptr;
+HWND g_performance = nullptr;
 HWND g_status = nullptr;
 HFONT g_font = nullptr;
 std::wstring g_root;
@@ -158,6 +160,7 @@ void SaveSettings() {
   WriteSetting(L"FrostyPack", Text(g_frosty_pack));
   WriteSetting(L"RecordMotionClip", Text(g_motion_clip));
   WriteSetting(L"PlayMotionClip", Text(g_motion_playback));
+  WriteSetting(L"PerformanceMode", Text(g_performance));
 }
 
 void LoadSettings() {
@@ -219,6 +222,7 @@ void LoadSettings() {
                  ReadSetting(L"RecordMotionClip", L"").c_str());
   SetWindowTextW(g_motion_playback,
                  ReadSetting(L"PlayMotionClip", L"").c_str());
+  SelectCombo(g_performance, ReadSetting(L"PerformanceMode", L"performance"));
 }
 
 void BrowseGame(HWND owner) {
@@ -346,7 +350,8 @@ void Launch() {
                          L" -UnitsPerMeter " + Quote(Text(g_units)) +
                          L" -TurnMode " + Quote(Text(g_turn)) +
                          L" -MonoLayer " + Quote(Text(g_layer)) +
-                         L" -QuadSpace " + Quote(Text(g_space));
+                         L" -QuadSpace " + Quote(Text(g_space)) +
+                         L" -PerformanceMode " + Quote(Text(g_performance));
   command += L" -LaunchBackend " + Quote(Text(g_backend));
   if (Text(g_backend) == L"frosty") {
     command += L" -FrostyPath " + Quote(Text(g_frosty_path)) +
@@ -456,6 +461,19 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam,
       SendMessageW(g_turn, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"smooth"));
       SendMessageW(g_turn, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"snap"));
       ApplyFont(g_turn);
+      Label(window, L"Performance", 270, 344, 100, 22);
+      g_performance = CreateWindowW(L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE |
+                                                   CBS_DROPDOWNLIST,
+                                    375, 340, 135, 200, window,
+                                    reinterpret_cast<HMENU>(kPerformance),
+                                    GetModuleHandleW(nullptr), nullptr);
+      SendMessageW(g_performance, CB_ADDSTRING, 0,
+                   reinterpret_cast<LPARAM>(L"performance"));
+      SendMessageW(g_performance, CB_ADDSTRING, 0,
+                   reinterpret_cast<LPARAM>(L"balanced"));
+      SendMessageW(g_performance, CB_ADDSTRING, 0,
+                   reinterpret_cast<LPARAM>(L"diagnostic"));
+      ApplyFont(g_performance);
       Label(window, L"Units per meter", 30, 300, 120, 22);
       g_units = CreateWindowW(L"EDIT", L"100", WS_CHILD | WS_VISIBLE | WS_BORDER,
                               150, 296, 80, 30, window,
@@ -471,16 +489,16 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam,
                    reinterpret_cast<LPARAM>(L"projection"));
       SendMessageW(g_layer, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"quad"));
       ApplyFont(g_layer);
-      Label(window, L"Quad space", 30, 344, 120, 22);
+      Label(window, L"Quad space", 30, 378, 120, 22);
       g_space = CreateWindowW(L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST,
-                              150, 340, 120, 200, window,
+                              150, 374, 120, 200, window,
                               reinterpret_cast<HMENU>(kSpace),
                               GetModuleHandleW(nullptr), nullptr);
       SendMessageW(g_space, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"view"));
       SendMessageW(g_space, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"local"));
       ApplyFont(g_space);
       g_discover = Button(window, L"Developer palette diagnostics (slow)",
-                          kDiscover, 300, 340, 250, 30, BS_AUTOCHECKBOX);
+                          kDiscover, 300, 374, 250, 30, BS_AUTOCHECKBOX);
       g_body_overlay = Button(window, L"Draw mod-owned IK body overlay",
                               kBodyOverlay, 30, 382, 250, 30, BS_AUTOCHECKBOX);
       g_physical_jump = Button(window, L"Physical jump",

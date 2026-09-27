@@ -53,3 +53,18 @@ mecvr_launcher.exe --self-test
 The release launcher is deliberately thin: injection, OpenXR session setup,
 fail-closed camera writes, capture, and frame submission remain in the
 runtime components launched by `launch_preview.ps1`.
+# Performance profiles
+
+The launcher exposes three profiles:
+
+- `performance` (default): keeps the shared D3D11 GPU transport active and
+  disables palette discovery and the optional mod-owned overlay.
+- `balanced`: normal runtime behavior with optional diagnostics controlled by
+  their individual checkboxes.
+- `diagnostic`: intended for capture/evidence sessions; it does not force
+  native skeleton writes or change the runtime's requested headset resolution.
+
+The profile is passed as `MECVR_PERFORMANCE_MODE`. It is deliberately
+runtime-neutral: AFR or compositor frame-generation remains owned by the
+active OpenXR/runtime stack, while MECVR avoids extra presents and expensive
+CPU readbacks.

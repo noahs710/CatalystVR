@@ -106,6 +106,11 @@ usable by the next sub-project's engineers as proven foundation.
   CPU readback and duplicate per-eye CPU allocations are bypassed while this
   path is active. Any adapter, registration, resize, or mutex failure revokes
   readiness and returns to the established CPU fallback.
+- **Performance profiles**: the launcher defaults to `performance`, which
+  disables palette discovery and the optional overlay while preserving the
+  shared GPU transport. `balanced` and `diagnostic` remain available for
+  development. MECVR does not replace or fight AFR/frame-generation owned by
+  the active OpenXR runtime.
 - **Launcher/package**: `tools/package_release.ps1` creates a tested ZIP;
   `launch_preview.ps1` starts the game in its install directory, injects the
   loader first, then the selected MECVR module.

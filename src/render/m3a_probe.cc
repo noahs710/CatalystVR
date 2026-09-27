@@ -3132,8 +3132,15 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID reserved) {
     g_palette_discovery_enabled =
         GetEnvironmentVariableA("MECVR_DISCOVER_PALETTES", palette_discovery,
                                 sizeof(palette_discovery)) > 0 &&
-        (palette_discovery[0] == '1' || palette_discovery[0] == 'y' ||
+         (palette_discovery[0] == '1' || palette_discovery[0] == 'y' ||
          palette_discovery[0] == 'Y');
+    char performance_mode[24] = {};
+    const DWORD performance_len = GetEnvironmentVariableA(
+        "MECVR_PERFORMANCE_MODE", performance_mode,
+        sizeof(performance_mode));
+    const bool performance_profile =
+        performance_len > 0 && _stricmp(performance_mode, "performance") == 0;
+    if (performance_profile) g_palette_discovery_enabled = false;
     LogF("m3a palette discovery: %s\n",
          g_palette_discovery_enabled ? "enabled" : "disabled");
 #ifdef MECVR_M3B
@@ -3157,8 +3164,12 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID reserved) {
     g_body_overlay_enabled =
         GetEnvironmentVariableA("MECVR_ENABLE_BODY_OVERLAY", body_overlay,
                                 sizeof(body_overlay)) > 0 &&
-        (body_overlay[0] == '1' || body_overlay[0] == 'y' ||
+         (body_overlay[0] == '1' || body_overlay[0] == 'y' ||
          body_overlay[0] == 'Y');
+    if (performance_profile) g_body_overlay_enabled = false;
+    LogF("m3b performance profile: %s\n",
+         performance_profile ? "performance" :
+         (performance_len > 0 ? performance_mode : "balanced"));
     LogF("m3b body overlay: %s\n",
          g_body_overlay_enabled ? "enabled" : "disabled");
     char physical_jump[8] = {};

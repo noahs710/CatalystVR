@@ -16,6 +16,12 @@ if (-not $launcher.Contains('ReadSetting(L"Stereo", L"0")')) {
 if (-not $launcher.Contains('ReadSetting(L"Layer", L"projection")')) {
   $failures.Add('launcher presentation default must be projection')
 }
+if (-not $script.Contains("[ValidateSet('balanced', 'performance', 'diagnostic')]")) {
+  $failures.Add('launcher must expose a performance profile')
+}
+if (-not $script.Contains('$env:MECVR_PERFORMANCE_MODE = $PerformanceMode')) {
+  $failures.Add('performance profile must reach the runtime')
+}
 if (-not $launcher.Contains('ReadSetting(L"SettingsVersion", L"1") != L"2"')) {
   $failures.Add('legacy launcher settings must migrate away from theatre defaults')
 }
