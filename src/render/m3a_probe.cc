@@ -253,6 +253,7 @@ std::atomic<std::uint64_t> g_stereo_pair_epoch{0};
 std::atomic<std::uint64_t> g_stereo_pair_pose{0};
 std::atomic<bool> g_stereo_enabled{false};
 bool g_camera_enabled = false;
+bool g_preserve_runtime_pacing = true;
 volatile LONGLONG g_camera_overrides = 0;
 ID3D11Resource* g_last_override_resource = nullptr;
 std::uint64_t g_last_override_present = ~std::uint64_t{0};
@@ -2313,6 +2314,7 @@ HRESULT STDMETHODCALLTYPE HookPresent(IDXGISwapChain* self, UINT sync,
   if (ctx != nullptr) ctx->OMGetRenderTargets(1, &check_rtv, &check_dsv);
 #ifdef MECVR_M3B
   const bool temporal_stereo =
+      !g_preserve_runtime_pacing &&
       g_stereo_enabled.load(std::memory_order_acquire) &&
       g_stereo_eye_valid.load(std::memory_order_acquire) &&
       g_stereo_pair_epoch.load(std::memory_order_acquire) != 0 &&
@@ -3227,6 +3229,15 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID reserved) {
          g_stereo_enabled.load(std::memory_order_acquire)
              ? "experimental temporal producer enabled"
              : "disabled");
+    char preserve_pacing[8] = {};
+    g_preserve_runtime_pacing =
+        GetEnvironmentVariableA("MECVR_PRESERVE_RUNTIME_PACING",
+                                preserve_pacing, sizeof(preserve_pacing)) == 0 ||
+        (preserve_pacing[0] != '0' && preserve_pacing[0] != 'n' &&
+         preserve_pacing[0] != 'N');
+    LogF("m3b runtime pacing/AFR preservation: %s\n",
+         g_preserve_runtime_pacing ? "enabled (temporal stereo suppressed)"
+                                    : "disabled");
     char body_overlay[8] = {};
     g_body_overlay_enabled =
         GetEnvironmentVariableA("MECVR_ENABLE_BODY_OVERLAY", body_overlay,
