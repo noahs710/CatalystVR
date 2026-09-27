@@ -173,8 +173,8 @@ void LoadSettings() {
                                                     : BST_UNCHECKED,
                0);
   SendMessageW(g_stereo, BM_SETCHECK,
-               (migrate_legacy_defaults ||
-                ReadSetting(L"Stereo", L"1") == L"1") ? BST_CHECKED
+               (!migrate_legacy_defaults &&
+                ReadSetting(L"Stereo", L"0") == L"1") ? BST_CHECKED
                                                      : BST_UNCHECKED,
                0);
   SelectCombo(g_turn, ReadSetting(L"Turn", L"smooth"));
@@ -354,7 +354,11 @@ void Launch() {
   }
   if (Checked(g_camera)) command += L" -EnableCamera";
   if (Checked(g_input)) command += L" -EnableInput";
-  if (!Checked(g_stereo)) command += L" -DisableStereo";
+  if (Checked(g_stereo)) {
+    command += L" -EnableStereo";
+  } else {
+    command += L" -DisableStereo";
+  }
   if (Checked(g_discover)) command += L" -DiscoverPalettes";
   if (Checked(g_body_overlay)) command += L" -EnableBodyOverlay";
   if (!Checked(g_physical_jump)) command += L" -DisablePhysicalJump";
@@ -431,7 +435,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam,
                         BS_AUTOCHECKBOX);
       g_input = Button(window, L"STRIDE motion + input", kInput, 200, 210, 210,
                        30, BS_AUTOCHECKBOX);
-      g_stereo = Button(window, L"Temporal stereo (experimental)", kStereo,
+      g_stereo = Button(window, L"Temporal stereo (experimental; opt-in)", kStereo,
                         30, 250, 280, 30, BS_AUTOCHECKBOX);
       Label(window, L"Mode", 340, 214, 42, 22);
       g_mode = CreateWindowW(L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE |

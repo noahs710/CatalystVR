@@ -7,11 +7,11 @@ $failures = [System.Collections.Generic.List[string]]::new()
 if (-not $script.Contains("[ValidateSet('quad', 'projection')] [string]`$MonoLayer = 'projection'")) {
   $failures.Add('launch_preview must default to immersive projection')
 }
-if (-not $script.Contains('[switch]$DisableStereo')) {
-  $failures.Add('stereo must be default-on with an explicit disable switch')
+if (-not $script.Contains('[switch]$EnableStereo')) {
+  $failures.Add('temporal stereo must have an explicit opt-in switch')
 }
-if (-not $launcher.Contains('ReadSetting(L"Stereo", L"1")')) {
-  $failures.Add('launcher stereo default must be enabled')
+if (-not $launcher.Contains('ReadSetting(L"Stereo", L"0")')) {
+  $failures.Add('launcher stereo default must use the safe mono fallback')
 }
 if (-not $launcher.Contains('ReadSetting(L"Layer", L"projection")')) {
   $failures.Add('launcher presentation default must be projection')

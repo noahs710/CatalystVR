@@ -64,7 +64,7 @@ $manifest = @(
   "MECVR version: $Version"
   "Built UTC: $([DateTime]::UtcNow.ToString('o'))"
   'Artifact: preview foundation; not a complete retail game conversion.'
-  'Stereo: immersive projection and temporal per-eye camera rendering are default-on; simultaneous native dual-pass proof is pending.'
+  'Stereo: the public alpha defaults to correctly converged immersive projection; temporal per-eye rendering is explicit opt-in and simultaneous native dual-pass proof is pending.'
   'Transport: capability-gated D3D11 shared-texture GPU path is default; CPU readback is the automatic fallback.'
   'Camera: opt-in M3b bridge; requires an OpenXR runtime and explicit calibration.'
   'Launcher: mecvr_launcher.exe provides persisted settings, dry-run checks, and launch handoff.'

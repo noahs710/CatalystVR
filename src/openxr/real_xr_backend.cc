@@ -1191,7 +1191,14 @@ LocatedViews RealOpenXRBackend::locateViews(Space space) {
 bool RealOpenXRBackend::QuadWanted() {
   char v[32] = {};
   const DWORD n = GetEnvironmentVariableA("MECVR_MONO_LAYER", v, sizeof(v));
-  return n > 0 && std::strcmp(v, "quad") == 0;
+  if (n == 0 || _stricmp(v, "quad") != 0) return false;
+  // Theatre mode is a deliberate diagnostic path. A second opt-in prevents
+  // stale process state from replacing immersive projection unexpectedly.
+  char allow[8] = {};
+  const DWORD allow_len =
+      GetEnvironmentVariableA("MECVR_ALLOW_THEATRE", allow, sizeof(allow));
+  return allow_len > 0 &&
+         (allow[0] == '1' || allow[0] == 'y' || allow[0] == 'Y');
 }
 
 bool RealOpenXRBackend::QuadLocal() {

@@ -51,7 +51,11 @@ if ($LaunchBackend -eq 'frosty') {
 
 $env:MECVR_ENABLE_CAMERA = if ($EnableCamera -or $Mode -eq 'camera') { '1' } else { '0' }
 $env:MECVR_ENABLE_INPUT = if ($EnableInput) { '1' } else { '0' }
-$env:MECVR_ENABLE_STEREO = if ($DisableStereo) { '0' } else { '1' }
+# The current render hook observes one game Present at a time. Enabling its
+# temporal eye-pair experiment by default produces cross-frame stereo and is
+# visibly worse than a correctly converged mono projection layer. Keep the
+# public alpha on the safe immersive fallback; opt in only for diagnostics.
+$env:MECVR_ENABLE_STEREO = if ($EnableStereo -and -not $DisableStereo) { '1' } else { '0' }
 $env:MECVR_ENABLE_BODY_OVERLAY = if ($EnableBodyOverlay) { '1' } else { '0' }
 $env:MECVR_ENABLE_PHYSICAL_JUMP = if ($DisablePhysicalJump) { '0' } else { '1' }
 $env:MECVR_ENABLE_PHYSICAL_CROUCH_INPUT =
@@ -66,7 +70,9 @@ $env:MECVR_PLAY_MOTION_CLIP = $PlayMotionClip
 $env:MECVR_DISCOVER_PALETTES = if ($DiscoverPalettes) { '1' } else { '0' }
 $env:MECVR_TURN_MODE = $TurnMode
 $env:MECVR_UNITS_PER_METER = $UnitsPerMeter.ToString([Globalization.CultureInfo]::InvariantCulture)
-$env:MECVR_MONO_LAYER = $MonoLayer
+# Theatre presentation requires an explicit diagnostic argument and is never
+# inherited from a stale process environment.
+$env:MECVR_MONO_LAYER = if ($MonoLayer -eq 'quad') { 'quad' } else { 'projection' }
 $env:MECVR_QUAD_SPACE = $QuadSpace
 $resolvedGame = (Resolve-Path $GamePath).Path
 $normalizedGame = [IO.Path]::GetFullPath($resolvedGame).TrimEnd('\').ToLowerInvariant()
