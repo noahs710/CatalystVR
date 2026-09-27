@@ -31,6 +31,7 @@
 #include <strsafe.h>
 
 #include <chrono>
+#include <array>
 #include <atomic>
 #include <cstdarg>
 #include <cstddef>
@@ -54,6 +55,8 @@
 #include "ik/full_body_ik.h"
 #include "ik/height_calibration.h"
 #include "ik/parkour_intent.h"
+#include "ik/native_pose_writer.h"
+#include "ik/native_bone_map.h"
 #include "openxr/real_xr_backend.h"
 #include "openxr/xr_frame_worker.h"
 #include "render/live_capture.h"
@@ -317,6 +320,11 @@ volatile LONGLONG g_ik_frames = 0;
 volatile LONGLONG g_ik_valid_frames = 0;
 volatile LONGLONG g_body_overlay_frames = 0;
 volatile LONGLONG g_palette_candidates = 0;
+#ifdef MECVR_M3B
+volatile LONGLONG g_native_pose_write_attempts = 0;
+volatile LONGLONG g_native_pose_write_applied = 0;
+volatile LONGLONG g_native_pose_write_rejected = 0;
+#endif
 bool g_palette_discovery_enabled = false;
 mecvr::render::NativeSkeletonAdapter g_native_skeleton_adapter;
 mecvr::render::NativePaletteTargetTracker g_native_palette_target;
@@ -453,6 +461,70 @@ void NotePaletteResourceSample(ID3D11Resource* res, UINT size,
   }
 }
 
+#ifdef MECVR_M3B
+bool TryBuildNativePoseWrite(PaletteResourceRecord* record,
+                             const PendingMap& pending,
+                             const mecvr::render::BonePaletteCandidate& candidate,
+                             const std::uint64_t content_fingerprint) {
+  const auto target = g_native_palette_target.snapshot();
+  if (!target.verified || record == nullptr ||
+      target.resource_id != record->id || pending.pdata == nullptr ||
+      pending.size == 0) {
+    return false;
+  }
+  InterlockedIncrement64(&g_native_pose_write_attempts);
+
+  mecvr::ik::HumanoidPoseFrame pose;
+  if (!g_body_pose_mailbox.latest(&pose)) {
+    InterlockedIncrement64(&g_native_pose_write_rejected);
+    return false;
+  }
+  mecvr::ik::NativePoseMatrices matrices{};
+  if (!mecvr::ik::BuildNativePoseMatrices(pose, &matrices)) {
+    InterlockedIncrement64(&g_native_pose_write_rejected);
+    return false;
+  }
+
+  mecvr::render::NativePaletteObservation observation;
+  observation.present_index = pending.cb != nullptr
+                                  ? pending.cb->last_present
+                                  : g_present_idx;
+  observation.constant_buffer_id = record->id;
+  observation.resource_size = record->size != 0 ? record->size : pending.size;
+  observation.content_fingerprint = content_fingerprint;
+  observation.candidate = candidate;
+  mecvr::ik::NativePoseWriteContext context;
+  context.current_pose_sequence = pose.sequence;
+  context.maximum_pose_lag = 2;
+  context.observation = observation;
+  context.adapter.verified = true;
+  context.adapter.constant_buffer_id = observation.constant_buffer_id;
+  context.adapter.resource_size = observation.resource_size;
+  context.adapter.content_fingerprint = observation.content_fingerprint;
+  context.adapter.candidate = observation.candidate;
+
+  // The default map intentionally contains no indices. This scratch call is
+  // the production seam and validation telemetry, but it cannot mutate the
+  // game's mapped bytes until a title-specific executable/map contract is
+  // supplied and passes every writer gate.
+  mecvr::ik::NativeBoneMap map;
+  constexpr std::size_t kScratchBytes = 65536;
+  thread_local std::array<std::uint8_t, kScratchBytes> scratch{};
+  const std::size_t source_size =
+      pending.size < kScratchBytes ? pending.size : kScratchBytes;
+  const auto status = mecvr::ik::RewriteNativePalette(
+      map, context, pose, matrices, pending.pdata, source_size,
+      scratch.data(), scratch.size());
+  if (status == mecvr::ik::NativePoseWriteStatus::kApplied) {
+    std::memcpy(pending.pdata, scratch.data(), source_size);
+    InterlockedIncrement64(&g_native_pose_write_applied);
+    return true;
+  }
+  InterlockedIncrement64(&g_native_pose_write_rejected);
+  return false;
+}
+#endif
+
 void NoteNonCbPalette(ID3D11Resource* res, const PendingMap& pending) {
   if (pending.pdata == nullptr || pending.size < 12 * 48) return;
   PaletteResourceRecord* record =
@@ -503,6 +575,9 @@ void NoteNonCbPalette(ID3D11Resource* res, const PendingMap& pending) {
          static_cast<unsigned long long>(g_present_idx), g_phase);
   }
   g_native_palette_target.observePalette(record->id, candidate, g_present_idx);
+#ifdef MECVR_M3B
+  TryBuildNativePoseWrite(record, pending, candidate, fingerprint);
+#endif
   if (candidate.matrix_count <= record->matrices) return;
   if (record->matrices == 0) InterlockedIncrement64(&g_palette_candidates);
   record->offset = static_cast<UINT>(candidate.offset);
@@ -2217,15 +2292,22 @@ void DumpStatus(const char* tag, std::int64_t now_ns, std::int64_t first_ns) {
   char main_ids[128] = {};
   TopCandidates(main_ids, sizeof(main_ids));
   LONGLONG camera_overrides = 0;
+  LONGLONG native_pose_attempts = 0;
+  LONGLONG native_pose_applied = 0;
+  LONGLONG native_pose_rejected = 0;
 #ifdef MECVR_M3B
   camera_overrides = g_camera_overrides;
+  native_pose_attempts = g_native_pose_write_attempts;
+  native_pose_applied = g_native_pose_write_applied;
+  native_pose_rejected = g_native_pose_write_rejected;
 #endif
   LogF("%s presents=%llu draws_last=%lld draw_idx=%lld cbs=%lld cands=%lld caps=%lld "
        "drops=%llu ovfl=%lld ovh_us=%.1f max_us=%.1f rate=%.1f state_fail=%lld "
        "dxgi_pc=%u dxgi_last=%u main=%s umatch=%lld execl=%lld exdrop=%lld "
        "d12dev=%lld d12q=%ld d12exec=%lld d12lists=%lld d12draws=%lld "
        "clear=%lld flush=%lld finish=%lld ik=%lld ik_valid=%lld body=%lld palettes=%lld "
-       "camera_overrides=%lld overlay=%lld "
+       "camera_overrides=%lld overlay=%lld native_pose_attempts=%lld "
+       "native_pose_applied=%lld native_pose_rejected=%lld "
        "phase=%s\n",
        tag, g_present_idx, g_draws_last_frame, g_draw_idx, g_cb_observed,
        g_candidates,
@@ -2235,7 +2317,8 @@ void DumpStatus(const char* tag, std::int64_t now_ns, std::int64_t first_ns) {
        g_d12_device_hooks, g_d12_queue_count, g_d12_execs, g_d12_lists,
        g_d12_draws, g_clear_states, g_flushes, g_finish_lists, g_ik_frames,
        g_ik_valid_frames, g_body_overlay_frames, g_palette_candidates,
-       camera_overrides, g_body_overlay_frames, g_phase);
+       camera_overrides, g_body_overlay_frames, native_pose_attempts,
+       native_pose_applied, native_pose_rejected, g_phase);
   const char* names[] = {"setcb", "shader", "update", "map", "unmap",
                          "om",    "rs",     "present", "execl"};
   for (int i = 0; i < 9; ++i) {

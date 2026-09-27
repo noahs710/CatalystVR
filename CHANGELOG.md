@@ -9,6 +9,10 @@
 - Kept MECVR presentation work free of synthetic presents and local frame
   waits so VDXR, SteamVR, Meta OpenXR, AFR, and runtime frame generation remain
   authoritative.
+- Connected the guarded M3B non-constant-buffer palette seam to the solved IK
+  pose-matrix builder. The seam records native-pose write attempts and
+  rejection reasons, but remains fail-closed until a validated title-specific
+  skeleton map and executable/layout contract are available.
 - Verified the Release build and all 35 automated tests.
 - Ran an observe-only retail probe against the supplied executable; the
   menu-phase run was stable but produced no Faith skeleton palette evidence,

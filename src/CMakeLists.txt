@@ -80,10 +80,10 @@ target_link_libraries(mecvr_camera PUBLIC mecvr_openxr_mock)
 add_library(mecvr_ik STATIC
   ik/arm_ik.cc
   ik/full_body_ik.cc
-  ik/height_calibration.cc
-  ik/parkour_intent.cc
   ik/native_bone_map.cc
   ik/native_pose_writer.cc
+  ik/height_calibration.cc
+  ik/parkour_intent.cc
 )
 target_include_directories(mecvr_ik PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(mecvr_ik PUBLIC mecvr_camera)
@@ -183,6 +183,8 @@ add_library(mecvr_m3b_live SHARED
   camera/view_override.cc
   ik/arm_ik.cc
   ik/full_body_ik.cc
+  ik/native_bone_map.cc
+  ik/native_pose_writer.cc
   ik/height_calibration.cc
   input/motion_scheme.cc
   input/comfort.cc
