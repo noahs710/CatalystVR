@@ -297,6 +297,12 @@ bool Validate(std::wstring* error) {
     *error = L"The selected motion playback clip does not exist.";
     return false;
   }
+  const std::wstring native_map = Text(g_native_bone_map);
+  if (!native_map.empty() &&
+      GetFileAttributesW(native_map.c_str()) == INVALID_FILE_ATTRIBUTES) {
+    *error = L"The selected native Faith bone contract does not exist.";
+    return false;
+  }
   return true;
 }
 

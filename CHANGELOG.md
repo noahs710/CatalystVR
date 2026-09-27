@@ -1,6 +1,6 @@
 # CatalystVR changelog
 
-## Unreleased — 1.5.1.8-alpha
+## Unreleased — 1.5.1.9-alpha
 
 - Added a persisted launcher control for preserving runtime-owned frame pacing,
   AFR, and compositor frame generation.
@@ -41,6 +41,9 @@
 - Recorded the follow-up retail result: resource updates and presents occur,
   but no D3D11/D3D12 draw or command-list execution reaches the current hook
   surface in the observed phase, so palette candidates remain non-semantic.
+- Added early launcher and PowerShell validation for an explicitly configured
+  native bone-contract path; the ordinary blank-path configuration remains
+  valid and fail-closed.
 - Verified the Release build and all 35 automated tests.
 - Ran an observe-only retail probe against the supplied executable; the
   menu-phase run was stable but produced no Faith skeleton palette evidence,

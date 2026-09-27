@@ -32,7 +32,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 if ([string]::IsNullOrWhiteSpace($PackageRoot)) {
-  $PackageRoot = Join-Path $PSScriptRoot '..\dist\MECVR-1.5.1.8-alpha'
+  $PackageRoot = Join-Path $PSScriptRoot '..\dist\MECVR-1.5.1.9-alpha'
 }
 $root = (Resolve-Path $PackageRoot).Path
 $bin = Join-Path $root 'bin'
@@ -41,6 +41,10 @@ $loader = Join-Path $bin 'openxr_loader.dll'
 $mod = if ($Mode -eq 'camera') { Join-Path $bin 'mecvr_m3b_live.dll' } else { Join-Path $bin 'mecvr_m2b_live.dll' }
 foreach ($path in @($GamePath, $injector, $loader, $mod)) {
   if (-not (Test-Path -LiteralPath $path)) { throw "Missing path: $path" }
+}
+if (-not [string]::IsNullOrWhiteSpace($NativeBoneMap) -and
+    -not (Test-Path -LiteralPath $NativeBoneMap -PathType Leaf)) {
+  throw "Native bone contract does not exist: $NativeBoneMap"
 }
 if ($LaunchBackend -eq 'frosty') {
   if ([string]::IsNullOrWhiteSpace($FrostyPath) -or
