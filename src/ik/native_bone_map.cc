@@ -165,4 +165,29 @@ bool LoadNativeBoneMap(const std::string& path, NativeBoneMap* output) {
   return true;
 }
 
+bool FingerprintExecutableFile(const std::string& path,
+                               std::uint64_t* fingerprint) {
+  if (path.empty() || fingerprint == nullptr) return false;
+  std::ifstream stream(path, std::ios::binary);
+  if (!stream.is_open()) return false;
+
+  constexpr std::uint64_t kOffset = 14695981039346656037ull;
+  constexpr std::uint64_t kPrime = 1099511628211ull;
+  std::uint64_t hash = kOffset;
+  std::array<char, 64 * 1024> block{};
+  std::uint64_t bytes = 0;
+  while (stream.good()) {
+    stream.read(block.data(), static_cast<std::streamsize>(block.size()));
+    const std::streamsize count = stream.gcount();
+    for (std::streamsize i = 0; i < count; ++i) {
+      hash ^= static_cast<unsigned char>(block[static_cast<std::size_t>(i)]);
+      hash *= kPrime;
+    }
+    bytes += static_cast<std::uint64_t>(count);
+  }
+  if (stream.bad() || bytes == 0) return false;
+  *fingerprint = hash;
+  return true;
+}
+
 }  // namespace mecvr::ik

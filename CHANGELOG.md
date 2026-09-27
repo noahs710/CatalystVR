@@ -1,6 +1,10 @@
 # CatalystVR changelog
 
-## Unreleased — 1.5.1.12-alpha
+## Unreleased — 1.5.1.13-alpha
+
+- Fixed the native Faith bone-contract executable gate so it fingerprints the
+  running executable on disk instead of trusting the contract's own claimed
+  fingerprint. Hash failure or mismatch now keeps native writes disabled.
 
 - Extended the read-only compatibility scanner to flag common Catalyst
   Frosty/DataPathFix plugin modules as advisory asset/launch conflicts.

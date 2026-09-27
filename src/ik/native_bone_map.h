@@ -47,4 +47,10 @@ NativeBoneMapValidation ValidateNativeBoneMap(
 // ValidateNativeBoneMap against live observations before writing anything.
 bool LoadNativeBoneMap(const std::string& path, NativeBoneMap* output);
 
+// Stable FNV-1a fingerprint of the complete executable image on disk. The
+// native writer compares this observed value with the reviewed contract;
+// failure leaves the fingerprint at zero and therefore fails closed.
+bool FingerprintExecutableFile(const std::string& path,
+                               std::uint64_t* fingerprint);
+
 }  // namespace mecvr::ik

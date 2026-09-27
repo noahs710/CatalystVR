@@ -334,6 +334,7 @@ mecvr::render::NativePaletteTargetTracker g_native_palette_target;
 #ifdef MECVR_M3B
 mecvr::ik::NativeBoneMap g_native_bone_map;
 bool g_native_bone_map_loaded = false;
+std::uint64_t g_runtime_executable_fingerprint = 0;
 #endif
 
 // Current GPU state snapshot (stamped on captures).
@@ -501,7 +502,7 @@ bool TryBuildNativePoseWrite(PaletteResourceRecord* record,
   observation.content_fingerprint = content_fingerprint;
   observation.candidate = candidate;
   mecvr::ik::NativePoseWriteContext context;
-  context.executable_fingerprint = g_native_bone_map.executable_fingerprint;
+  context.executable_fingerprint = g_runtime_executable_fingerprint;
   context.current_pose_sequence = pose.sequence;
   context.maximum_pose_lag = 2;
   context.observation = observation;
@@ -2729,6 +2730,19 @@ void HookKnownClasses(ID3D11Device* device, HWND hwnd) {
 
 #ifdef MECVR_M3B
 unsigned __stdcall PoseWorkerProc(void*) {
+  char executable_path[32768] = {};
+  const DWORD executable_path_len = GetModuleFileNameA(
+      nullptr, executable_path, static_cast<DWORD>(sizeof(executable_path)));
+  if (executable_path_len > 0 && executable_path_len < sizeof(executable_path) &&
+      mecvr::ik::FingerprintExecutableFile(
+          executable_path, &g_runtime_executable_fingerprint)) {
+    LogF("m3b executable fingerprint=%016llx path=%s\n",
+         static_cast<unsigned long long>(g_runtime_executable_fingerprint),
+         executable_path);
+  } else {
+    g_runtime_executable_fingerprint = 0;
+    LogF("m3b executable fingerprint unavailable; native writes disabled\n");
+  }
   mecvr::openxr::RealOpenXRBackend backend;
   if (!backend.startup()) {
     LogF("m3b camera: XR startup unavailable: %s\n",

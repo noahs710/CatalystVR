@@ -2,7 +2,7 @@
 param(
   [string]$BuildDir,
   [string]$OutputDir,
-  [string]$Version = '1.5.1.12-alpha'
+  [string]$Version = '1.5.1.13-alpha'
 )
 
 $ErrorActionPreference = 'Stop'

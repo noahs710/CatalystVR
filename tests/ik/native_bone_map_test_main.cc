@@ -57,5 +57,33 @@ int main() {
   assert(!mecvr::ik::LoadNativeBoneMap("missing-native-bone-map.contract",
                                       &loaded));
   std::remove(contract_path);
+
+  const char* executable_path = "native_bone_map_test.image";
+  {
+    std::ofstream image(executable_path, std::ios::binary);
+    image << "CatalystVR\n";
+  }
+  std::uint64_t first_fingerprint = 0;
+  std::uint64_t repeated_fingerprint = 0;
+  if (!mecvr::ik::FingerprintExecutableFile(executable_path,
+                                             &first_fingerprint) ||
+      !mecvr::ik::FingerprintExecutableFile(executable_path,
+                                             &repeated_fingerprint) ||
+      first_fingerprint == 0 || first_fingerprint != repeated_fingerprint) {
+    return 1;
+  }
+  {
+    std::ofstream image(executable_path, std::ios::binary | std::ios::app);
+    image << "changed";
+  }
+  std::uint64_t changed_fingerprint = 0;
+  if (!mecvr::ik::FingerprintExecutableFile(executable_path,
+                                             &changed_fingerprint) ||
+      changed_fingerprint == first_fingerprint ||
+      mecvr::ik::FingerprintExecutableFile("missing-executable.image",
+                                            &changed_fingerprint)) {
+    return 1;
+  }
+  std::remove(executable_path);
   return 0;
 }
