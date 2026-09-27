@@ -1,6 +1,10 @@
 # CatalystVR changelog
 
-## Unreleased — 1.5.1.13-alpha
+## Unreleased — 1.5.1.14-alpha
+
+- Added `fingerprint_executable.ps1`, an offline utility that emits the exact
+  executable fingerprint format required by reviewed native contracts without
+  fabricating resource or joint mappings.
 
 - Fixed the native Faith bone-contract executable gate so it fingerprints the
   running executable on disk instead of trusting the contract's own claimed

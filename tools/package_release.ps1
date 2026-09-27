@@ -2,7 +2,7 @@
 param(
   [string]$BuildDir,
   [string]$OutputDir,
-  [string]$Version = '1.5.1.13-alpha'
+  [string]$Version = '1.5.1.14-alpha'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -49,6 +49,7 @@ foreach ($relative in $required) {
 }
 Copy-Item -LiteralPath (Join-Path $repo 'tools\launch_preview.ps1') -Destination $stageResolved
 Copy-Item -LiteralPath (Join-Path $repo 'tools\index_catalyst_assets.ps1') -Destination $stageResolved
+Copy-Item -LiteralPath (Join-Path $repo 'tools\fingerprint_executable.ps1') -Destination $stageResolved
 Copy-Item -LiteralPath (Join-Path $build 'src\Release\mecvr_launcher.exe') -Destination $stageResolved
 
 $testOutput = & ctest --test-dir $build -C Release --output-on-failure 2>&1
