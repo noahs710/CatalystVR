@@ -1,6 +1,6 @@
 # CatalystVR changelog
 
-## Unreleased — 1.5.1.4-alpha
+## Unreleased — 1.5.1.5-alpha
 
 - Added a persisted launcher control for preserving runtime-owned frame pacing,
   AFR, and compositor frame generation.
@@ -30,6 +30,9 @@
 - Fixed explicit temporal stereo capture being bypassed by the successful
   shared-GPU mono path. Stereo mode now pairs separate left/right captures;
   normal performance mode continues to prefer shared-GPU transport.
+- Made explicit stereo take precedence over the default runtime-pacing
+  preservation checkbox, preventing the launcher’s AFR-safe default from
+  silently disabling the requested per-eye producer.
 - Verified the Release build and all 35 automated tests.
 - Ran an observe-only retail probe against the supplied executable; the
   menu-phase run was stable but produced no Faith skeleton palette evidence,

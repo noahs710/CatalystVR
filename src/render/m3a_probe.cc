@@ -3335,6 +3335,12 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID reserved) {
                                 preserve_pacing, sizeof(preserve_pacing)) == 0 ||
         (preserve_pacing[0] != '0' && preserve_pacing[0] != 'n' &&
          preserve_pacing[0] != 'N');
+    // Explicit stereo is a deliberate presentation-mode override: it needs
+    // two game captures per XR pose epoch, so runtime pacing preservation must
+    // not silently disable the stereo producer. The default (stereo off)
+    // profile remains fully runtime-paced and AFR-compatible.
+    if (g_stereo_enabled.load(std::memory_order_acquire))
+      g_preserve_runtime_pacing = false;
     LogF("m3b runtime pacing/AFR preservation: %s\n",
          g_preserve_runtime_pacing ? "enabled (temporal stereo suppressed)"
                                     : "disabled");
