@@ -70,7 +70,10 @@ usable by the next sub-project's engineers as proven foundation.
   `MECVR_NATIVE_BONE_MAP` automatically enables the bounded capture/correlation
   path; native writes still require every runtime and executable guard. Native
   maps may cover the eight arm joints only, leaving torso/legs game-animated.
-  The probe also observes structured SRV buffers refreshed through
+  Deferred-context VS/PS shader-resource state is tracked in a bounded
+  per-context window so native palette-to-draw correlation remains valid when
+  Catalyst records work away from the immediate context. The probe also
+  observes structured SRV buffers refreshed through
   `UpdateSubresource`. With a reviewed native map and a fully verified target,
   the source is copied into a bounded scratch buffer and the solved arm
   matrices are forwarded through that update; unknown or unverified uploads

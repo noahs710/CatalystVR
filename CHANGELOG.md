@@ -1,6 +1,11 @@
 # CatalystVR changelog
 
-## Unreleased — 1.5.1.23-alpha
+## Unreleased — 1.5.1.24-alpha
+
+- Fixed native palette-to-draw correlation for deferred D3D11 contexts by
+  retaining bounded VS/PS SRV and shader state per context. Draw promotion no
+  longer depends on immediate-context globals, improving the path that can
+  safely identify Faith's live skinning resource.
 
 - Added a guarded `UpdateSubresource` native-pose rewrite path for structured
   SRV buffers, covering Catalyst skinning uploads that bypass the existing

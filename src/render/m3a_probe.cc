@@ -137,6 +137,7 @@ constexpr std::size_t kBigBufferBytes = 65536;
 constexpr std::size_t kBigBufferFpPrefix = 4096;
 constexpr std::size_t kMaxMatWindowsPerDump = 8;
 constexpr std::size_t kMaxPendingMaps = 8;
+constexpr std::size_t kTrackedSrvSlots = 16;
 constexpr std::size_t kPhaseRecheckPresents = 60;
 
 // ---- Hook bookkeeping -----------------------------------------------------
@@ -186,6 +187,14 @@ struct CtxEntry {
   volatile LONG draw_calls = 0;
   volatile LONG finish_calls = 0;
   volatile LONG execute_calls = 0;
+  // Deferred contexts keep their own binding state. Keeping the first
+  // bounded SRV window per context lets draw correlation survive command
+  // recording instead of incorrectly consulting the immediate-context
+  // globals.
+  ID3D11ShaderResourceView* vs_srv[kTrackedSrvSlots] = {};
+  ID3D11ShaderResourceView* ps_srv[kTrackedSrvSlots] = {};
+  ID3D11VertexShader* vs = nullptr;
+  ID3D11PixelShader* ps = nullptr;
 };
 
 enum CtxHook {
@@ -1178,9 +1187,14 @@ void STDMETHODCALLTYPE HookVSSetShaderResources(
                         e->orig[kH_VSSetShaderResources])
                   : nullptr;
   if (orig != nullptr) orig(self, start, count, views);
-  if (g_armed && g_palette_discovery_enabled && views != nullptr && start == 0 &&
-      count > 0)
-    g_vs_srv0 = views[0];
+  if (g_armed && g_palette_discovery_enabled && e != nullptr &&
+      start < kTrackedSrvSlots) {
+    const UINT limit = static_cast<UINT>(kTrackedSrvSlots - start);
+    const UINT n = count < limit ? count : limit;
+    for (UINT i = 0; i < n; ++i)
+      e->vs_srv[start + i] = views != nullptr ? views[i] : nullptr;
+    g_vs_srv0 = e->vs_srv[0];
+  }
 }
 
 void STDMETHODCALLTYPE HookPSSetShaderResources(
@@ -1192,9 +1206,14 @@ void STDMETHODCALLTYPE HookPSSetShaderResources(
                         e->orig[kH_PSSetShaderResources])
                   : nullptr;
   if (orig != nullptr) orig(self, start, count, views);
-  if (g_armed && g_palette_discovery_enabled && views != nullptr && start == 0 &&
-      count > 0)
-    g_ps_srv0 = views[0];
+  if (g_armed && g_palette_discovery_enabled && e != nullptr &&
+      start < kTrackedSrvSlots) {
+    const UINT limit = static_cast<UINT>(kTrackedSrvSlots - start);
+    const UINT n = count < limit ? count : limit;
+    for (UINT i = 0; i < n; ++i)
+      e->ps_srv[start + i] = views != nullptr ? views[i] : nullptr;
+    g_ps_srv0 = e->ps_srv[0];
+  }
 }
 
 void STDMETHODCALLTYPE HookIASetVertexBuffers(
@@ -1239,7 +1258,10 @@ void STDMETHODCALLTYPE HookVSSetShader(ID3D11DeviceContext* self,
                                  e->orig[kH_VSSetShader])
                            : nullptr;
   if (orig != nullptr) orig(self, vs, ci, n);
-  if (g_armed) g_vs = vs;
+  if (g_armed) {
+    g_vs = vs;
+    if (e != nullptr) e->vs = vs;
+  }
   OvhdAdd(g_ovh_shader, QpcNow() - t0);
 }
 
@@ -1254,16 +1276,40 @@ void STDMETHODCALLTYPE HookPSSetShader(ID3D11DeviceContext* self,
                                  e->orig[kH_PSSetShader])
                            : nullptr;
   if (orig != nullptr) orig(self, ps, ci, n);
-  if (g_armed) g_ps = ps;
+  if (g_armed) {
+    g_ps = ps;
+    if (e != nullptr) e->ps = ps;
+  }
   OvhdAdd(g_ovh_shader, QpcNow() - t0);
 }
 
 // Record the bound palette against every draw family.  Skinned meshes may be
 // emitted through instanced or indirect draws; limiting correlation to the two
 // non-instanced entry points makes a real palette look unused.
-void NotePaletteDraw(UINT count, UINT start, INT base, std::uint8_t kind) {
+void NotePaletteDraw(ID3D11DeviceContext* self, UINT count, UINT start,
+                     INT base, std::uint8_t kind) {
   if (!g_armed || !g_palette_discovery_enabled) return;
-  const auto note_srv = [](ID3D11ShaderResourceView* srv) {
+  CtxEntry* context =
+      self != nullptr ? EntryFor(*reinterpret_cast<void***>(self)) : nullptr;
+  ID3D11ShaderResourceView* fallback_vs[kTrackedSrvSlots] = {};
+  ID3D11ShaderResourceView* fallback_ps[kTrackedSrvSlots] = {};
+  if (context == nullptr) {
+    fallback_vs[0] = g_vs_srv0;
+    fallback_ps[0] = g_ps_srv0;
+  }
+  ID3D11ShaderResourceView* const* vs_srvs =
+      context != nullptr ? context->vs_srv : fallback_vs;
+  ID3D11ShaderResourceView* const* ps_srvs =
+      context != nullptr ? context->ps_srv : fallback_ps;
+  ID3D11VertexShader* vertex_shader_obj =
+      context != nullptr ? context->vs : g_vs;
+  ID3D11PixelShader* pixel_shader_obj =
+      context != nullptr ? context->ps : g_ps;
+  const std::uintptr_t vertex_shader =
+      reinterpret_cast<std::uintptr_t>(vertex_shader_obj);
+  const std::uintptr_t pixel_shader =
+      reinterpret_cast<std::uintptr_t>(pixel_shader_obj);
+  const auto note_srv = [&](ID3D11ShaderResourceView* srv) {
     if (srv == nullptr) return;
     ID3D11Resource* resource = nullptr;
     srv->GetResource(&resource);
@@ -1272,19 +1318,21 @@ void NotePaletteDraw(UINT count, UINT start, INT base, std::uint8_t kind) {
       if (record != nullptr) {
         g_native_palette_target.noteDraw(
             record->id, g_present_idx, static_cast<std::uint64_t>(g_draw_idx),
-            reinterpret_cast<std::uintptr_t>(g_vs),
-            reinterpret_cast<std::uintptr_t>(g_ps));
+            vertex_shader, pixel_shader);
       }
       resource->Release();
     }
   };
-  note_srv(g_vs_srv0);
-  note_srv(g_ps_srv0);
+  for (std::size_t i = 0; i < kTrackedSrvSlots; ++i) {
+    note_srv(vs_srvs[i]);
+    note_srv(ps_srvs[i]);
+  }
   const LONG slot = InterlockedIncrement(&g_draw_correlation_count) - 1;
   if (slot >= 0 && slot < kMaxDrawCorrelationSamples) {
     auto& s = g_draw_correlation[slot];
-    s = {static_cast<std::uint64_t>(g_draw_idx), g_present_idx, g_vs, g_ps,
-         g_ia_vb0, g_ia_ib, g_vs_srv0, g_ps_srv0, count, start, base,
+    s = {static_cast<std::uint64_t>(g_draw_idx), g_present_idx,
+         vertex_shader_obj, pixel_shader_obj, g_ia_vb0, g_ia_ib, vs_srvs[0],
+         ps_srvs[0], count, start, base,
          g_ia_vb_stride, g_ia_vb_offset, g_ia_ib_format, kind};
   }
 }
@@ -1298,7 +1346,7 @@ void STDMETHODCALLTYPE HookDrawIndexed(ID3D11DeviceContext* self, UINT count,
                            : nullptr;
   if (orig != nullptr) orig(self, count, start, base);
   NoteContextDraw(self);
-  NotePaletteDraw(count, start, base, 0);
+  NotePaletteDraw(self, count, start, base, 0);
   InterlockedIncrement64(&g_draws);
   InterlockedIncrement64(&g_draw_idx);
 }
@@ -1310,7 +1358,7 @@ void STDMETHODCALLTYPE HookDraw(ID3D11DeviceContext* self, UINT count,
       e != nullptr ? reinterpret_cast<DrawFn>(e->orig[kH_Draw]) : nullptr;
   if (orig != nullptr) orig(self, count, start);
   NoteContextDraw(self);
-  NotePaletteDraw(count, start, 0, 1);
+  NotePaletteDraw(self, count, start, 0, 1);
   InterlockedIncrement64(&g_draws);
   InterlockedIncrement64(&g_draw_idx);
 }
@@ -1325,7 +1373,7 @@ void STDMETHODCALLTYPE HookDrawIndexedInst(ID3D11DeviceContext* self,
                                : nullptr;
   if (orig != nullptr) orig(self, cpi, inst, start, base, si);
   NoteContextDraw(self);
-  NotePaletteDraw(cpi, start, base, 2);
+  NotePaletteDraw(self, cpi, start, base, 2);
   InterlockedIncrement64(&g_draws);
   InterlockedIncrement64(&g_draw_idx);
 }
@@ -1338,7 +1386,7 @@ void STDMETHODCALLTYPE HookDrawInst(ID3D11DeviceContext* self, UINT cpv,
                         : nullptr;
   if (orig != nullptr) orig(self, cpv, inst, start, si);
   NoteContextDraw(self);
-  NotePaletteDraw(cpv, start, 0, 3);
+  NotePaletteDraw(self, cpv, start, 0, 3);
   InterlockedIncrement64(&g_draws);
   InterlockedIncrement64(&g_draw_idx);
 }
@@ -1350,7 +1398,7 @@ void STDMETHODCALLTYPE HookDrawAuto(ID3D11DeviceContext* self) {
                         : nullptr;
   if (orig != nullptr) orig(self);
   NoteContextDraw(self);
-  NotePaletteDraw(0, 0, 0, 4);
+  NotePaletteDraw(self, 0, 0, 0, 4);
   InterlockedIncrement64(&g_draws);
   InterlockedIncrement64(&g_draw_idx);
 }
@@ -1366,7 +1414,7 @@ void STDMETHODCALLTYPE HookDrawIndexedInstIndirect(ID3D11DeviceContext* self,
           : nullptr;
   if (orig != nullptr) orig(self, args, offset);
   NoteContextDraw(self);
-  NotePaletteDraw(0, offset, 0, 5);
+  NotePaletteDraw(self, 0, offset, 0, 5);
   InterlockedIncrement64(&g_draws);
   InterlockedIncrement64(&g_draw_idx);
 }
@@ -1382,7 +1430,7 @@ void STDMETHODCALLTYPE HookDrawInstIndirect(ID3D11DeviceContext* self,
           : nullptr;
   if (orig != nullptr) orig(self, args, offset);
   NoteContextDraw(self);
-  NotePaletteDraw(0, offset, 0, 6);
+  NotePaletteDraw(self, 0, offset, 0, 6);
   InterlockedIncrement64(&g_draws);
   InterlockedIncrement64(&g_draw_idx);
 }
