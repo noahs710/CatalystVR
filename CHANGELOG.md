@@ -21,6 +21,9 @@
   can point to a versioned text contract; malformed or incomplete contracts
   remain rejected by the existing executable/resource/layout/uniqueness gates,
   while the default path stays fully fail-closed.
+- Exposed the native contract path in the persisted launcher settings and
+  launch handoff, so verified title-specific adapters no longer require manual
+  environment editing.
 - Verified the Release build and all 35 automated tests.
 - Ran an observe-only retail probe against the supplied executable; the
   menu-phase run was stable but produced no Faith skeleton palette evidence,

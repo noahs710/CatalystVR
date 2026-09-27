@@ -42,6 +42,7 @@ enum : int {
   kMotionPlaybackBrowse = 123,
   kPerformance = 130,
   kRuntimePacing = 131,
+  kNativeBoneMap = 132,
 };
 
 HWND g_game_path = nullptr;
@@ -68,6 +69,7 @@ HWND g_motion_clip = nullptr;
 HWND g_motion_playback = nullptr;
 HWND g_performance = nullptr;
 HWND g_runtime_pacing = nullptr;
+HWND g_native_bone_map = nullptr;
 HWND g_status = nullptr;
 HFONT g_font = nullptr;
 std::wstring g_root;
@@ -164,6 +166,7 @@ void SaveSettings() {
   WriteSetting(L"PlayMotionClip", Text(g_motion_playback));
   WriteSetting(L"PerformanceMode", Text(g_performance));
   WriteSetting(L"PreserveRuntimePacing", Checked(g_runtime_pacing) ? L"1" : L"0");
+  WriteSetting(L"NativeBoneMap", Text(g_native_bone_map));
 }
 
 void LoadSettings() {
@@ -229,6 +232,8 @@ void LoadSettings() {
   SendMessageW(g_runtime_pacing, BM_SETCHECK,
                ReadSetting(L"PreserveRuntimePacing", L"1") == L"1"
                    ? BST_CHECKED : BST_UNCHECKED, 0);
+  SetWindowTextW(g_native_bone_map,
+                 ReadSetting(L"NativeBoneMap", L"").c_str());
 }
 
 void BrowseGame(HWND owner) {
@@ -359,6 +364,8 @@ void Launch() {
                          L" -QuadSpace " + Quote(Text(g_space)) +
                          L" -PerformanceMode " + Quote(Text(g_performance));
   if (Checked(g_runtime_pacing)) command += L" -PreserveRuntimePacing";
+  if (!Text(g_native_bone_map).empty())
+    command += L" -NativeBoneMap " + Quote(Text(g_native_bone_map));
   command += L" -LaunchBackend " + Quote(Text(g_backend));
   if (Text(g_backend) == L"frosty") {
     command += L" -FrostyPath " + Quote(Text(g_frosty_path)) +
@@ -585,14 +592,23 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam,
       Button(window, L"Browse", kMotionPlaybackBrowse, 500, 576, 70, 30);
       Label(window, L"Playback loops; live head/camera tracking remains active.",
             30, 665, 510, 22);
-      Button(window, L"LAUNCH VR", kLaunch, 30, 700, 170, 42, BS_DEFPUSHBUTTON);
-      Button(window, L"Dry run", kDryRun, 210, 700, 120, 42);
-      Button(window, L"Save", kSave, 340, 700, 100, 42);
-      Label(window, L"STATUS", 30, 770, 160, 22);
+      Label(window, L"Native Faith bone contract (optional, verified builds only)",
+            30, 705, 350, 22);
+      g_native_bone_map = CreateWindowW(
+          L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_BORDER, 30, 730, 465, 30,
+          window, reinterpret_cast<HMENU>(kNativeBoneMap),
+          GetModuleHandleW(nullptr), nullptr);
+      ApplyFont(g_native_bone_map);
+      Label(window, L"Leave empty unless the exact executable/palette contract is verified.",
+            30, 765, 510, 22);
+      Button(window, L"LAUNCH VR", kLaunch, 30, 800, 170, 42, BS_DEFPUSHBUTTON);
+      Button(window, L"Dry run", kDryRun, 210, 800, 120, 42);
+      Button(window, L"Save", kSave, 340, 800, 100, 42);
+      Label(window, L"STATUS", 30, 870, 160, 22);
       g_status = CreateWindowW(L"EDIT", L"Ready. HMD is not required for Dry run.",
                                WS_CHILD | WS_VISIBLE | WS_BORDER | ES_MULTILINE |
                                    ES_READONLY | WS_VSCROLL,
-                               30, 796, 530, 130, window,
+                               30, 896, 530, 130, window,
                                reinterpret_cast<HMENU>(kStatus),
                                GetModuleHandleW(nullptr), nullptr);
       ApplyFont(g_status);
@@ -661,7 +677,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
   HWND window = CreateWindowExW(0, klass.lpszClassName,
                                L"MECVR // Catalyst VR", WS_OVERLAPPED |
                                    WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
-                               CW_USEDEFAULT, CW_USEDEFAULT, 610, 940, nullptr,
+                               CW_USEDEFAULT, CW_USEDEFAULT, 610, 1060, nullptr,
                                nullptr, instance, nullptr);
   ShowWindow(window, show);
   UpdateWindow(window);

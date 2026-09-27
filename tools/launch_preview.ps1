@@ -26,6 +26,7 @@ param(
   [ValidateSet('smooth', 'snap')] [string]$TurnMode = 'smooth',
   [ValidateSet('balanced', 'performance', 'diagnostic')] [string]$PerformanceMode = 'performance',
   [switch]$PreserveRuntimePacing,
+  [string]$NativeBoneMap,
   [float]$UnitsPerMeter = 100.0
 )
 
@@ -73,6 +74,7 @@ $env:MECVR_DISCOVER_PALETTES = if ($DiscoverPalettes) { '1' } else { '0' }
 $env:MECVR_TURN_MODE = $TurnMode
 $env:MECVR_PERFORMANCE_MODE = $PerformanceMode
 $env:MECVR_PRESERVE_RUNTIME_PACING = if ($PreserveRuntimePacing) { '1' } else { '0' }
+$env:MECVR_NATIVE_BONE_MAP = $NativeBoneMap
 $env:MECVR_UNITS_PER_METER = $UnitsPerMeter.ToString([Globalization.CultureInfo]::InvariantCulture)
 # Theatre presentation requires an explicit diagnostic argument and is never
 # inherited from a stale process environment.
