@@ -2,7 +2,7 @@
 param(
   [string]$BuildDir,
   [string]$OutputDir,
-  [string]$Version = '1.5.1.2-alpha'
+  [string]$Version = '1.5.1.3-alpha'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -43,7 +43,7 @@ foreach ($relative in $required) {
   Copy-Item -LiteralPath $source -Destination (Join-Path $stageResolved 'bin')
 }
 
-@('README.md', 'RELEASE.md', 'CAMERA.md', 'INPUT.md', 'TEST_MATRIX.md', 'ENGINE_INTEL.md', 'LAUNCHER.md', 'FEATURE_BENCHMARK.md', 'FROSTY_COEXISTENCE.md') | ForEach-Object {
+@('README.md', 'RELEASE.md', 'CAMERA.md', 'INPUT.md', 'TEST_MATRIX.md', 'ENGINE_INTEL.md', 'LAUNCHER.md', 'FEATURE_BENCHMARK.md', 'FROSTY_COEXISTENCE.md', 'RETAIL_EVIDENCE.md') | ForEach-Object {
   $source = Join-Path $repo "docs\$_"
   if (Test-Path -LiteralPath $source) { Copy-Item -LiteralPath $source -Destination (Join-Path $stageResolved 'docs') }
 }

@@ -1,6 +1,6 @@
 # CatalystVR changelog
 
-## Unreleased — 1.5.1.2-alpha
+## Unreleased — 1.5.1.3-alpha
 
 - Added a persisted launcher control for preserving runtime-owned frame pacing,
   AFR, and compositor frame generation.
@@ -24,6 +24,9 @@
 - Exposed the native contract path in the persisted launcher settings and
   launch handoff, so verified title-specific adapters no longer require manual
   environment editing.
+- Added a reproducible observe-only retail validation record documenting the
+  stable 193 FPS probe run, palette-shaped resources, and the evidence still
+  missing before native Faith writes can be enabled.
 - Verified the Release build and all 35 automated tests.
 - Ran an observe-only retail probe against the supplied executable; the
   menu-phase run was stable but produced no Faith skeleton palette evidence,
