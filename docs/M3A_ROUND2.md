@@ -60,7 +60,7 @@ orders, this is evidence AGAINST the isolation, not against the solve
   structure + TAA proj proves it). It did not follow the run inputs.
 - Prime suspects: (A) inputs never reached the game (focus loss; user
   misattributed drift/teleports as response); (B) a hidden camera path
-  (UpdateSubresource, which the probe does not hook).
+  (`UpdateSubresource`, which is now audited for structured SRV uploads).
 - Discriminator: user testimony (did the image respond? menus? T0?) +
   round-3 probe: phase markers, focus guard, UpdateSubresource audit.
 

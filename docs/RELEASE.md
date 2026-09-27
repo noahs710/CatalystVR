@@ -71,9 +71,11 @@ usable by the next sub-project's engineers as proven foundation.
   path; native writes still require every runtime and executable guard. Native
   maps may cover the eight arm joints only, leaving torso/legs game-animated.
   The probe also observes structured SRV buffers refreshed through
-  `UpdateSubresource`; that source path is strictly read-only. The expensive
-  discovery path is disabled in normal play and performs no writes unless a
-  reviewed map is supplied.
+  `UpdateSubresource`. With a reviewed native map and a fully verified target,
+  the source is copied into a bounded scratch buffer and the solved arm
+  matrices are forwarded through that update; unknown or unverified uploads
+  remain untouched. The expensive discovery path is disabled in normal play
+  and performs no writes unless a reviewed map is supplied.
 - **Native XR input**: optional OpenXR action set with per-hand grip spaces,
   trigger/squeeze/menu/face buttons, and thumbsticks, sampled from the XR
   worker and neutral on unsupported runtimes.

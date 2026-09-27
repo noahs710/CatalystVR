@@ -531,6 +531,56 @@ bool TryBuildNativePoseWrite(PaletteResourceRecord* record,
   InterlockedIncrement64(&g_native_pose_write_rejected);
   return false;
 }
+
+bool TryBuildNativePoseUpload(
+    PaletteResourceRecord* record,
+    const mecvr::render::BonePaletteCandidate& candidate,
+    std::uint64_t content_fingerprint, const void* source,
+    std::size_t source_size, void* output, std::size_t output_size) {
+  const auto target = g_native_palette_target.snapshot();
+  if (!g_native_bone_map_loaded || !target.verified || record == nullptr ||
+      target.resource_id != record->id || source == nullptr || output == nullptr ||
+      source_size == 0 || source_size > 65536) {
+    return false;
+  }
+  InterlockedIncrement64(&g_native_pose_write_attempts);
+  mecvr::ik::HumanoidPoseFrame pose;
+  if (!g_body_pose_mailbox.latest(&pose)) {
+    InterlockedIncrement64(&g_native_pose_write_rejected);
+    return false;
+  }
+  mecvr::ik::NativePoseMatrices matrices{};
+  if (!mecvr::ik::BuildNativePoseMatrices(pose, &matrices)) {
+    InterlockedIncrement64(&g_native_pose_write_rejected);
+    return false;
+  }
+  mecvr::render::NativePaletteObservation observation;
+  observation.present_index = g_present_idx;
+  observation.constant_buffer_id = record->id;
+  observation.resource_size = record->size != 0 ? record->size
+                                                : static_cast<UINT>(source_size);
+  observation.content_fingerprint = content_fingerprint;
+  observation.candidate = candidate;
+  mecvr::ik::NativePoseWriteContext context;
+  context.executable_fingerprint = g_runtime_executable_fingerprint;
+  context.current_pose_sequence = pose.sequence;
+  context.maximum_pose_lag = 2;
+  context.observation = observation;
+  context.adapter.verified = true;
+  context.adapter.constant_buffer_id = observation.constant_buffer_id;
+  context.adapter.resource_size = observation.resource_size;
+  context.adapter.content_fingerprint = observation.content_fingerprint;
+  context.adapter.candidate = observation.candidate;
+  const auto status = mecvr::ik::RewriteNativePalette(
+      g_native_bone_map, context, pose, matrices, source, source_size, output,
+      output_size);
+  if (status == mecvr::ik::NativePoseWriteStatus::kApplied) {
+    InterlockedIncrement64(&g_native_pose_write_applied);
+    return true;
+  }
+  InterlockedIncrement64(&g_native_pose_write_rejected);
+  return false;
+}
 #endif
 
 void NoteNonCbPalette(ID3D11Resource* res, const PendingMap& pending) {
@@ -1367,6 +1417,40 @@ void STDMETHODCALLTYPE HookUpdate(ID3D11DeviceContext* self,
       }
     }
     LeaveCriticalSection(&g_cb_lock);
+
+    // A mapped palette can be rewritten in HookUnmap. For a structured SRV
+    // palette updated through UpdateSubresource, prepare a bounded scratch
+    // copy before forwarding so the game receives the solved pose without
+    // ever modifying its caller-owned source memory.
+    if (g_native_bone_map_loaded && g_palette_discovery_enabled) {
+      EnterCriticalSection(&g_cb_lock);
+      ID3D11Buffer* buffer = nullptr;
+      if (SUCCEEDED(res->QueryInterface(__uuidof(ID3D11Buffer),
+                                        reinterpret_cast<void**>(&buffer))) &&
+          buffer != nullptr) {
+        D3D11_BUFFER_DESC desc{};
+        buffer->GetDesc(&desc);
+        buffer->Release();
+        const UINT size = desc.ByteWidth;
+        if (size >= 12 * 48 && size <= 16384 &&
+            (desc.BindFlags & D3D11_BIND_SHADER_RESOURCE) != 0) {
+          auto* record = PaletteRecordFor(res, size, desc.BindFlags);
+          const std::size_t scan =
+              size < kMaxScanBytes ? size : kMaxScanBytes;
+          const auto candidate =
+              mecvr::render::ClassifyBonePalette(src, scan);
+          if (record != nullptr && candidate.valid()) {
+            thread_local std::array<std::uint8_t, kMaxScanBytes> scratch{};
+            const std::uint64_t fingerprint = HashWords64(src, scan);
+            if (TryBuildNativePoseUpload(record, candidate, fingerprint, src,
+                                         scan, scratch.data(), scratch.size())) {
+              forwarded_src = scratch.data();
+            }
+          }
+        }
+      }
+      LeaveCriticalSection(&g_cb_lock);
+    }
   }
 #endif
   if (orig != nullptr)
