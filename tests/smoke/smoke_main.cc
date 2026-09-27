@@ -22,7 +22,7 @@ void Check(bool ok, const char* name) {
 
 int main() {
   Check(MECVR_VERSION_MAJOR == 1 && MECVR_VERSION_UPDATE == 5 &&
-            MECVR_VERSION_PATCH == 1 && MECVR_VERSION_MINOR_CHANGE == 1,
+            MECVR_VERSION_PATCH == 1 && MECVR_VERSION_MINOR_CHANGE == 2,
         "version surface present");
 
   mecvr::config::Registry registry;
