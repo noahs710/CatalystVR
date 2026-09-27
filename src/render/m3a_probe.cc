@@ -3355,7 +3355,11 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID reserved) {
         sizeof(performance_mode));
     const bool performance_profile =
         performance_len > 0 && _stricmp(performance_mode, "performance") == 0;
-    if (performance_profile) g_palette_discovery_enabled = false;
+    // An explicit discovery request is a diagnostic contract-capture mode;
+    // it must not be silently cancelled by the launcher's normal performance
+    // default. Ordinary performance launches still keep discovery disabled.
+    if (performance_profile && !g_palette_discovery_enabled)
+      g_palette_discovery_enabled = false;
     LogF("m3a palette discovery: %s\n",
          g_palette_discovery_enabled ? "enabled" : "disabled");
 #ifdef MECVR_M3B

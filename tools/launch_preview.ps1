@@ -32,7 +32,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 if ([string]::IsNullOrWhiteSpace($PackageRoot)) {
-  $PackageRoot = Join-Path $PSScriptRoot '..\dist\MECVR-1.5.1.18-alpha'
+  $PackageRoot = Join-Path $PSScriptRoot '..\dist\MECVR-1.5.1.19-alpha'
 }
 $root = (Resolve-Path $PackageRoot).Path
 $bin = Join-Path $root 'bin'
@@ -75,7 +75,13 @@ $env:MECVR_RECORD_MOTION_CLIP = $RecordMotionClip
 $env:MECVR_PLAY_MOTION_CLIP = $PlayMotionClip
 $env:MECVR_DISCOVER_PALETTES = if ($DiscoverPalettes) { '1' } else { '0' }
 $env:MECVR_TURN_MODE = $TurnMode
-$env:MECVR_PERFORMANCE_MODE = $PerformanceMode
+$effectivePerformanceMode =
+  if ($DiscoverPalettes -and $PerformanceMode -eq 'performance') {
+    'diagnostic'
+  } else {
+    $PerformanceMode
+  }
+$env:MECVR_PERFORMANCE_MODE = $effectivePerformanceMode
 $env:MECVR_PRESERVE_RUNTIME_PACING = if ($PreserveRuntimePacing) { '1' } else { '0' }
 $env:MECVR_NATIVE_BONE_MAP = $NativeBoneMap
 $env:MECVR_UNITS_PER_METER = $UnitsPerMeter.ToString([Globalization.CultureInfo]::InvariantCulture)

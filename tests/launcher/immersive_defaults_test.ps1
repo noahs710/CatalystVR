@@ -8,10 +8,10 @@ if (-not $script.Contains("[ValidateSet('quad', 'projection')] [string]`$MonoLay
   $failures.Add('launch_preview must default to immersive projection')
 }
 if (-not $script.Contains('[switch]$EnableStereo')) {
-  $failures.Add('temporal stereo must have an explicit opt-in switch')
+  $failures.Add('launcher must retain the stereo compatibility switch')
 }
-if (-not $launcher.Contains('ReadSetting(L"Stereo", L"0")')) {
-  $failures.Add('launcher stereo default must use the safe mono fallback')
+if (-not $launcher.Contains('ReadSetting(L"Stereo", L"1")')) {
+  $failures.Add('launcher stereo default must be immersive')
 }
 if (-not $launcher.Contains('ReadSetting(L"Layer", L"projection")')) {
   $failures.Add('launcher presentation default must be projection')
@@ -19,7 +19,7 @@ if (-not $launcher.Contains('ReadSetting(L"Layer", L"projection")')) {
 if (-not $script.Contains("[ValidateSet('balanced', 'performance', 'diagnostic')]")) {
   $failures.Add('launcher must expose a performance profile')
 }
-if (-not $script.Contains('$env:MECVR_PERFORMANCE_MODE = $PerformanceMode')) {
+if (-not $script.Contains('$env:MECVR_PERFORMANCE_MODE = $effectivePerformanceMode')) {
   $failures.Add('performance profile must reach the runtime')
 }
 if (-not $launcher.Contains('ReadSetting(L"SettingsVersion", L"1") != L"2"')) {

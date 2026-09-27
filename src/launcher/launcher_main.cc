@@ -181,10 +181,12 @@ void LoadSettings() {
                ReadSetting(L"Input", L"1") == L"1" ? BST_CHECKED
                                                     : BST_UNCHECKED,
                0);
+  // Immersive stereo is the public default. Existing settings remain
+  // respected when explicitly saved; a missing/legacy value opts into the
+  // same stereo-first behavior as launch_preview.ps1.
   SendMessageW(g_stereo, BM_SETCHECK,
-               (!migrate_legacy_defaults &&
-                ReadSetting(L"Stereo", L"0") == L"1") ? BST_CHECKED
-                                                     : BST_UNCHECKED,
+               ReadSetting(L"Stereo", L"1") == L"1" ? BST_CHECKED
+                                                    : BST_UNCHECKED,
                0);
   SelectCombo(g_turn, ReadSetting(L"Turn", L"smooth"));
   SetWindowTextW(g_units, ReadSetting(L"Units", L"100").c_str());

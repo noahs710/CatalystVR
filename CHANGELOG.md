@@ -1,6 +1,10 @@
 # CatalystVR changelog
 
-## Unreleased — 1.5.1.18-alpha
+## Unreleased — 1.5.1.19-alpha
+
+- Fixed explicit `-DiscoverPalettes` capture mode being overridden by the
+  launcher's default performance profile; requested contract discovery now
+  automatically selects diagnostic performance settings.
 
 - Expanded unattended M3B transport telemetry with stereo submitted/rejected
   counts, upload latency, present/XR rates, and frame age.
