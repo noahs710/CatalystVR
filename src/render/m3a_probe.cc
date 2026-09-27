@@ -564,7 +564,12 @@ void NoteNonCbPalette(ID3D11Resource* res, const PendingMap& pending) {
   const auto candidate =
       mecvr::render::ClassifyBonePalette(pending.pdata, scan);
   if (!candidate.valid()) return;
-  const std::uint64_t fingerprint = HashWords64(pending.pdata, scan);
+  // Content fingerprints are only needed by the opt-in native writer. The
+  // normal alpha path is read-only; hashing every candidate upload (up to
+  // 64 KiB per observation) needlessly adds CPU and memory traffic to the
+  // render thread.
+  const std::uint64_t fingerprint =
+      g_native_bone_map_loaded ? HashWords64(pending.pdata, scan) : 0;
   mecvr::render::NativePaletteObservation observation;
   observation.present_index = g_present_idx;
   observation.constant_buffer_id = record->id;

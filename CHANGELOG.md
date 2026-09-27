@@ -1,6 +1,10 @@
 # CatalystVR changelog
 
-## Unreleased — 1.5.1.15-alpha
+## Unreleased — 1.5.1.16-alpha
+
+- Removed unconditional 64 KiB palette-content hashing from the read-only
+  render path. Fingerprinting now runs only when an explicit native bone map
+  is loaded, reducing unnecessary CPU/memory traffic during normal alpha use.
 
 - Added retail archive asset-index evidence for Faith and shared Catalyst
   skeleton packages, including Data/Patch layer coverage and the verified
