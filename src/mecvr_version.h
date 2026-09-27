@@ -1,7 +1,9 @@
 #pragma once
 
-// Frozen version surface. Bump only with a plan amendment.
-#define MECVR_VERSION_MAJOR 0
-#define MECVR_VERSION_MINOR 1
-#define MECVR_VERSION_PATCH 0
-#define MECVR_VERSION_SUFFIX "subproject1"
+// Four-component semantic mod version: Major.Update.Patch.MinorChange.
+// Keep this synchronized with the package/release version.
+#define MECVR_VERSION_MAJOR 1
+#define MECVR_VERSION_UPDATE 1
+#define MECVR_VERSION_PATCH 1
+#define MECVR_VERSION_MINOR_CHANGE 1
+#define MECVR_VERSION_SUFFIX "alpha"

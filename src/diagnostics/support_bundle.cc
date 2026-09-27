@@ -99,7 +99,8 @@ std::string FileSizeText(const fs::path& path) {
 void WriteBuildVersions(const fs::path& path) {
   std::ofstream out(path);
   out << "mecvr_version=" << MECVR_VERSION_MAJOR << "."
-      << MECVR_VERSION_MINOR << "." << MECVR_VERSION_PATCH << "-"
+      << MECVR_VERSION_UPDATE << "." << MECVR_VERSION_PATCH << "."
+      << MECVR_VERSION_MINOR_CHANGE << "-"
       << MECVR_VERSION_SUFFIX << "\n";
   out << "msc_ver=" << _MSC_VER << "\n";
   out << "cplusplus=" << __cplusplus << "\n";
