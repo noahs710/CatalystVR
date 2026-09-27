@@ -30,6 +30,11 @@ enum class NativePoseWriteStatus : std::uint8_t {
   kOutOfBounds,
 };
 
+// Converts the canonical mod-owned pose into row-major world-space affine
+// matrices with translation in elements 3, 7, and 11.
+bool BuildNativePoseMatrices(const HumanoidPoseFrame& pose,
+                             NativePoseMatrices* output);
+
 // Copies source to output and rewrites only mapped palette entries. No source
 // memory is ever modified. The caller may publish output only when kApplied is
 // returned; every rejected request leaves output byte-identical to source.

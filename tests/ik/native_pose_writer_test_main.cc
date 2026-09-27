@@ -15,6 +15,7 @@ using mecvr::ik::NativeBoneMap;
 using mecvr::ik::NativePoseMatrices;
 using mecvr::ik::NativePoseWriteContext;
 using mecvr::ik::NativePoseWriteStatus;
+using mecvr::ik::TrackedPose;
 using mecvr::render::BoneMatrixLayout;
 
 struct Fixture {
@@ -79,6 +80,26 @@ float ReadFloat(const std::vector<std::uint8_t>& bytes, std::size_t offset) {
 }  // namespace
 
 int main() {
+  HumanoidPoseFrame generated;
+  generated.sequence = 1;
+  generated.valid = true;
+  for (auto& joint : generated.joints)
+    joint = TrackedPose{{0.0, 0.0, 0.0}, {0.0, 0.0, 0.0, 1.0}, true};
+  generated.joints[static_cast<std::size_t>(BodyJoint::kHead)] =
+      TrackedPose{{1.0, 2.0, 3.0}, {0.0, 0.0, 0.0, 1.0}, true};
+  NativePoseMatrices generated_matrices{};
+  if (!mecvr::ik::BuildNativePoseMatrices(generated, &generated_matrices))
+    return 1;
+  const auto& head_matrix = generated_matrices[
+      static_cast<std::size_t>(BodyJoint::kHead)];
+  if (head_matrix[3] != 1.0f || head_matrix[7] != 2.0f ||
+      head_matrix[11] != 3.0f)
+    return 1;
+  generated.joints[static_cast<std::size_t>(BodyJoint::kHead)].position.x =
+      std::numeric_limits<double>::quiet_NaN();
+  if (mecvr::ik::BuildNativePoseMatrices(generated, &generated_matrices))
+    return 1;
+
   Fixture valid;
   assert(valid.rewrite() == NativePoseWriteStatus::kApplied);
   assert(valid.source[128] == 0x5a);

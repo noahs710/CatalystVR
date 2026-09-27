@@ -7,6 +7,34 @@
 namespace mecvr::ik {
 namespace {
 
+NativeAffineMatrix MatrixFromPose(const TrackedPose& pose) {
+  const auto q = camera::QuatNormalize(pose.orientation);
+  const double xx = q.x * q.x, yy = q.y * q.y, zz = q.z * q.z;
+  const double xy = q.x * q.y, xz = q.x * q.z, yz = q.y * q.z;
+  const double wx = q.w * q.x, wy = q.w * q.y, wz = q.w * q.z;
+  return {static_cast<float>(1.0 - 2.0 * (yy + zz)),
+          static_cast<float>(2.0 * (xy - wz)),
+          static_cast<float>(2.0 * (xz + wy)),
+          static_cast<float>(pose.position.x),
+          static_cast<float>(2.0 * (xy + wz)),
+          static_cast<float>(1.0 - 2.0 * (xx + zz)),
+          static_cast<float>(2.0 * (yz - wx)),
+          static_cast<float>(pose.position.y),
+          static_cast<float>(2.0 * (xz - wy)),
+          static_cast<float>(2.0 * (yz + wx)),
+          static_cast<float>(1.0 - 2.0 * (xx + yy)),
+          static_cast<float>(pose.position.z), 0.0f, 0.0f, 0.0f, 1.0f};
+}
+
+bool FinitePose(const TrackedPose& pose) {
+  return pose.valid && std::isfinite(pose.position.x) &&
+         std::isfinite(pose.position.y) && std::isfinite(pose.position.z) &&
+         std::isfinite(pose.orientation.x) &&
+         std::isfinite(pose.orientation.y) &&
+         std::isfinite(pose.orientation.z) &&
+         std::isfinite(pose.orientation.w);
+}
+
 bool SameCandidate(const render::BonePaletteCandidate& a,
                    const render::BonePaletteCandidate& b) {
   return a.offset == b.offset && a.stride == b.stride &&
@@ -55,6 +83,16 @@ void EncodeMatrix(const NativeAffineMatrix& source,
 }
 
 }  // namespace
+
+bool BuildNativePoseMatrices(const HumanoidPoseFrame& pose,
+                             NativePoseMatrices* output) {
+  if (output == nullptr || !pose.valid || pose.sequence == 0) return false;
+  for (std::size_t i = 0; i < output->size(); ++i) {
+    if (!FinitePose(pose.joints[i])) return false;
+    (*output)[i] = MatrixFromPose(pose.joints[i]);
+  }
+  return true;
+}
 
 NativePoseWriteStatus RewriteNativePalette(
     const NativeBoneMap& map, const NativePoseWriteContext& context,
