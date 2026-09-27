@@ -4,6 +4,6 @@
 // Keep this synchronized with the package/release version.
 #define MECVR_VERSION_MAJOR 1
 #define MECVR_VERSION_UPDATE 5
-#define MECVR_VERSION_PATCH 1
-#define MECVR_VERSION_MINOR_CHANGE 25
+#define MECVR_VERSION_PATCH 2
+#define MECVR_VERSION_MINOR_CHANGE 0
 #define MECVR_VERSION_SUFFIX "alpha"

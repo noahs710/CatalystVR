@@ -180,6 +180,7 @@ add_library(mecvr_m3b_live SHARED
   render/observer.cc
   render/vtable_hook.cc
   camera/math.cc
+  camera/conventions.cc
   camera/view_override.cc
   ik/arm_ik.cc
   ik/full_body_ik.cc

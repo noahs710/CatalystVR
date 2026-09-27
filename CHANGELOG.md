@@ -1,5 +1,18 @@
 # CatalystVR changelog
 
+## Unreleased — 1.5.2.0-alpha
+
+- Replaced Catalyst's desktop projection at the confirmed scene-CB byte 96
+  with each OpenXR eye's runtime-provided asymmetric frustum. The guarded
+  rewrite preserves Catalyst's 0.06-unit near plane and infinite-far depth
+  convention, while malformed or unexpected buffers remain untouched.
+- Made eye view and projection rewrites atomic so a frame can never receive
+  only half of the stereo camera transform.
+- Kept swapchain dimensions and refresh pacing entirely runtime-owned; no
+  VDXR resolution or refresh override is introduced.
+- Added regression coverage for asymmetric eye projection, near-plane
+  preservation, and fail-closed projection classification.
+
 ## Unreleased — 1.5.1.25-alpha
 
 - Added guarded vertex-stage SRV binding evidence for Catalyst paths that

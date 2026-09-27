@@ -1672,16 +1672,33 @@ bool TryApplyCameraOverride(CbRecord* rec, void* data, std::size_t bytes,
     local_translation = mecvr::camera::VecScale(
         local_translation, kMaxHeadOffsetMeters / length);
   }
-  const bool applied = mecvr::camera::RewriteViewPoseMatrix(
-      static_cast<float*>(data), bytes / sizeof(float), 8, delta,
-      local_translation, g_camera_units_per_meter,
-      mecvr::camera::MultOrder::kColumnVector);
+  float camera_matrices[32];
+  std::memcpy(camera_matrices, static_cast<float*>(data) + 8,
+              sizeof(camera_matrices));
+  bool projection_applied = true;
+  if (eye_pose_valid) {
+    const auto& fov = snapshot.views[eye].fov;
+    const mecvr::camera::FrustumTangents frustum{
+        std::tan(static_cast<double>(fov.angle_left)),
+        std::tan(static_cast<double>(fov.angle_right)),
+        std::tan(static_cast<double>(fov.angle_up)),
+        std::tan(static_cast<double>(fov.angle_down))};
+    projection_applied = mecvr::camera::RewriteProjectionMatrix(
+        camera_matrices, 32, 16, frustum);
+  }
+  const bool view_applied = mecvr::camera::RewriteViewPoseMatrix(
+      camera_matrices, 32, 0, delta, local_translation,
+      g_camera_units_per_meter, mecvr::camera::MultOrder::kColumnVector);
+  const bool applied = projection_applied && view_applied;
   if (applied) {
+    std::memcpy(static_cast<float*>(data) + 8, camera_matrices,
+                sizeof(camera_matrices));
     g_last_override_resource = resource;
     g_last_override_present = g_present_idx;
     InterlockedIncrement64(&g_camera_overrides);
     if (g_camera_overrides == 1) {
-      LogF("m3b camera override enabled: view=off32 units_per_meter=%.3f "
+      LogF("m3b camera override enabled: view=off32 projection=off96 "
+           "units_per_meter=%.3f "
            "snapshot=%llu\n",
            g_camera_units_per_meter,
            static_cast<unsigned long long>(snapshot.sequence));

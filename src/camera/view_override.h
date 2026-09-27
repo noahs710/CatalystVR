@@ -32,4 +32,11 @@ bool RewriteViewPoseMatrix(float* floats, std::size_t float_count,
                            Vec3 local_translation_m, double units_per_meter,
                            MultOrder order);
 
+// Replaces Catalyst's observed RH, [0,1], infinite-far projection with the
+// runtime eye frustum while preserving the game's near plane. This is guarded
+// to the exact projection family observed at scene-CB byte offset 96.
+bool RewriteProjectionMatrix(float* floats, std::size_t float_count,
+                             std::size_t projection_offset_floats,
+                             const FrustumTangents& frustum);
+
 }  // namespace mecvr::camera

@@ -23,6 +23,17 @@ bool LooksLikeView(const Mat4& m) {
          Near(m.m[13], 0.0, 1e-3) && Near(m.m[14], 0.0, 1e-3);
 }
 
+bool LooksLikeCatalystProjection(const Mat4& m) {
+  return std::isfinite(m.m[0]) && std::isfinite(m.m[5]) &&
+         m.m[0] > 0.05 && m.m[5] > 0.05 &&
+         Near(m.m[1], 0.0, 1e-4) && Near(m.m[3], 0.0, 1e-4) &&
+         Near(m.m[4], 0.0, 1e-4) && Near(m.m[7], 0.0, 1e-4) &&
+         Near(m.m[8], 0.0, 1e-4) && Near(m.m[9], 0.0, 1e-4) &&
+         Near(m.m[10], -1.0, 0.02) && m.m[11] < -0.001 &&
+         Near(m.m[12], 0.0, 1e-4) && Near(m.m[13], 0.0, 1e-4) &&
+         Near(m.m[14], -1.0, 1e-3) && Near(m.m[15], 0.0, 1e-4);
+}
+
 }  // namespace
 
 Mat4 ApplyViewRotationDelta(const Mat4& base_view, const Quat& delta,
@@ -83,6 +94,29 @@ bool RewriteViewPoseMatrix(float* floats, std::size_t float_count,
   for (int i = 0; i < 16; ++i) {
     floats[view_offset_floats + i] = static_cast<float>(result.m[i]);
   }
+  return true;
+}
+
+bool RewriteProjectionMatrix(float* floats, std::size_t float_count,
+                             std::size_t projection_offset_floats,
+                             const FrustumTangents& frustum) {
+  if (floats == nullptr || projection_offset_floats > float_count ||
+      float_count - projection_offset_floats < 16) {
+    return false;
+  }
+  Mat4 base;
+  for (int i = 0; i < 16; ++i)
+    base.m[i] = floats[projection_offset_floats + i];
+  if (!LooksLikeCatalystProjection(base)) return false;
+  ProjectionConvention convention;
+  convention.mult = MultOrder::kColumnVector;
+  convention.clip_z = ClipZ::kZeroToOne;
+  convention.handed = Handedness::kRight;
+  convention.infinite_far = true;
+  const Mat4 result = BuildProjection(frustum, -base.m[11], 1.0, convention);
+  if (Near(result.m[15], 1.0, 1e-6)) return false;
+  for (int i = 0; i < 16; ++i)
+    floats[projection_offset_floats + i] = static_cast<float>(result.m[i]);
   return true;
 }
 

@@ -132,9 +132,10 @@ game_yaw, game_pitch, game_walk, done. 12678 presents, 316 CBs,
   and publishes one immutable snapshot through `src/camera/pose_mailbox.h`.
   The render hook never calls OpenXR.
 - The bridge recognizes only the observed 1136-byte scene constant buffer and
-  rewrites only the view matrix at byte 32, once per resource per Present,
-  using the anchor-relative HMD quaternion and a guarded orthonormality check.
-  Projection and game/player state are untouched.
+  rewrites the view matrix at byte 32 and, for temporal stereo, the confirmed
+  projection at byte 96 once per resource per Present. The view uses the
+  anchor-relative HMD/eye pose; the projection uses the runtime-provided
+  asymmetric eye FOV while preserving Catalyst's near/depth convention.
 - Default behavior is disabled; invalid/stale snapshots, unknown buffer sizes,
   absent XR hardware, and malformed view data all fail closed to the original
   game matrix.

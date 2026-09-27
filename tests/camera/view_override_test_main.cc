@@ -49,6 +49,32 @@ int main() {
         "non-view buffer fails closed");
   Check(Near(base.m[3], 4.0), "base matrix remains immutable");
 
+  ProjectionConvention projection_convention;
+  projection_convention.infinite_far = true;
+  float projection_cb[32] = {};
+  const Mat4 desktop_projection = BuildProjection(
+      FrustumTangents{-1.6, 1.6, 0.9, -0.9}, 0.06, 1.0,
+      projection_convention);
+  for (int i = 0; i < 16; ++i)
+    projection_cb[8 + i] = static_cast<float>(desktop_projection.m[i]);
+  const FrustumTangents left_eye{-1.1, 0.9, 1.0, -1.0};
+  Check(RewriteProjectionMatrix(projection_cb, 32, 8, left_eye),
+        "valid Catalyst projection rewrites");
+  const Mat4 expected =
+      BuildProjection(left_eye, 0.06, 1.0, projection_convention);
+  bool projection_matches = true;
+  for (int i = 0; i < 16; ++i)
+    projection_matches &= Near(projection_cb[8 + i], expected.m[i]);
+  Check(projection_matches, "runtime asymmetric frustum is written exactly");
+  Check(Near(projection_cb[8 + 11], -0.06),
+        "projection rewrite preserves game near plane");
+  float invalid_projection[24] = {};
+  invalid_projection[8] = 1.0f;
+  invalid_projection[8 + 5] = 1.0f;
+  invalid_projection[8 + 15] = 1.0f;
+  Check(!RewriteProjectionMatrix(invalid_projection, 24, 8, left_eye),
+        "non-projection buffer fails closed");
+
   if (failures == 0) std::printf("view_override: all checks passed\n");
   return failures == 0 ? 0 : 1;
 }
