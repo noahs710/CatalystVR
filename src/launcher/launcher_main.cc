@@ -200,7 +200,7 @@ void LoadSettings() {
                    : BST_UNCHECKED,
                0);
   SendMessageW(g_body_overlay, BM_SETCHECK,
-                ReadSetting(L"BodyOverlay", L"0") == L"1" ? BST_CHECKED
+               ReadSetting(L"BodyOverlay", L"1") == L"1" ? BST_CHECKED
                                                              : BST_UNCHECKED,
                 0);
   SendMessageW(g_physical_jump, BM_SETCHECK,
@@ -387,7 +387,11 @@ void Launch() {
     command += L" -DisableStereo";
   }
   if (Checked(g_discover)) command += L" -DiscoverPalettes";
-  if (Checked(g_body_overlay)) command += L" -EnableBodyOverlay";
+  if (Checked(g_body_overlay)) {
+    command += L" -EnableBodyOverlay";
+  } else {
+    command += L" -DisableBodyOverlay";
+  }
   if (!Checked(g_physical_jump)) command += L" -DisablePhysicalJump";
   if (!Checked(g_physical_crouch)) command += L" -DisablePhysicalCrouchInput";
   if (Checked(g_parkour_input)) command += L" -EnableParkourInput";
@@ -521,7 +525,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam,
       ApplyFont(g_space);
       g_discover = Button(window, L"Developer palette diagnostics (slow)",
                           kDiscover, 300, 374, 250, 30, BS_AUTOCHECKBOX);
-      g_body_overlay = Button(window, L"Draw mod-owned IK body overlay",
+      g_body_overlay = Button(window, L"Mod-owned IK arms/body",
                               kBodyOverlay, 30, 382, 250, 30, BS_AUTOCHECKBOX);
       g_physical_jump = Button(window, L"Physical jump",
                                kPhysicalJump, 300, 382, 120, 30,

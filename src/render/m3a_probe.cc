@@ -3406,13 +3406,23 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID reserved) {
     } else {
       LogF("m3b native bone contract: disabled (MECVR_NATIVE_BONE_MAP unset)\n");
     }
+    if (g_native_bone_map_loaded) {
+      // A reviewed native map is an explicit request for bounded palette
+      // capture/correlation. It does not authorize writes by itself: the
+      // executable, resource, layout, draw-target, freshness, and bounds
+      // gates in the writer must still pass.
+      g_palette_discovery_enabled = true;
+      LogF("m3b native pose path: palette correlation enabled\n");
+    }
     char body_overlay[8] = {};
     g_body_overlay_enabled =
         GetEnvironmentVariableA("MECVR_ENABLE_BODY_OVERLAY", body_overlay,
                                 sizeof(body_overlay)) > 0 &&
          (body_overlay[0] == '1' || body_overlay[0] == 'y' ||
          body_overlay[0] == 'Y');
-    if (performance_profile) g_body_overlay_enabled = false;
+    const bool body_overlay_requested = g_body_overlay_enabled;
+    if (performance_profile && !body_overlay_requested)
+      g_body_overlay_enabled = false;
     LogF("m3b performance profile: %s\n",
          performance_profile ? "performance" :
          (performance_len > 0 ? performance_mode : "balanced"));

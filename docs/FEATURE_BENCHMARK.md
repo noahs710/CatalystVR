@@ -49,8 +49,9 @@ mod-owned procedural animation driven by tracked motion.
   stable, repeated palette layout from the same resource, fingerprint, and
   presentation frame sequence before verification; it does not write or infer
   retail bone semantics.
-- `native_bone_map_test` proves executable, resource, layout, completeness, and
-  joint-uniqueness checks gate native bone-map readiness.
+- `native_bone_map_test` proves executable, resource, layout, complete-arm, and
+  joint-uniqueness checks gate native bone-map readiness. Unmapped torso/leg
+  entries remain `-1` so Catalyst retains its animation for those regions.
 - Retail diagnostics found that Catalyst's four mapped constant buffers do not
   contain a contiguous skeleton palette. An opt-in SRV discovery path identified
   small structured-buffer candidates and is disabled by default after use.

@@ -140,5 +140,20 @@ int main() {
   assert(out_of_bounds.rewrite() == NativePoseWriteStatus::kOutOfBounds);
   assert(out_of_bounds.output == out_of_bounds.source);
 
+  Fixture arms_only;
+  arms_only.map.joint_indices.fill(-1);
+  arms_only.map.joint_indices[static_cast<std::size_t>(BodyJoint::kLeftShoulder)] = 5;
+  arms_only.map.joint_indices[static_cast<std::size_t>(BodyJoint::kLeftElbow)] = 6;
+  arms_only.map.joint_indices[static_cast<std::size_t>(BodyJoint::kLeftWrist)] = 7;
+  arms_only.map.joint_indices[static_cast<std::size_t>(BodyJoint::kLeftHand)] = 8;
+  arms_only.map.joint_indices[static_cast<std::size_t>(BodyJoint::kRightShoulder)] = 9;
+  arms_only.map.joint_indices[static_cast<std::size_t>(BodyJoint::kRightElbow)] = 10;
+  arms_only.map.joint_indices[static_cast<std::size_t>(BodyJoint::kRightWrist)] = 11;
+  arms_only.map.joint_indices[static_cast<std::size_t>(BodyJoint::kRightHand)] = 12;
+  assert(arms_only.rewrite() == NativePoseWriteStatus::kApplied);
+  assert(arms_only.output[128] == 0x5a);
+  assert(arms_only.output[128 + 5 * 48] != 0x5a);
+  assert(arms_only.output[128 + 20 * 48] == 0x5a);
+
   return 0;
 }

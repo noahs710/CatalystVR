@@ -57,7 +57,9 @@ establish the runtime palette layout, joint ordering, or Faith bone indices.
 Those values still require a live, resource-qualified capture from the running
 game and must match the executable fingerprint, resource size, palette
 offset/stride/layout, and complete unique joint map before the guarded writer
-can be enabled.
+can be enabled. The current arm milestone only requires a complete unique map
+for the eight arm joints; torso and leg entries may remain `-1` so the game
+continues to animate those regions.
 
 The reproducible command is:
 

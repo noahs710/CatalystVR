@@ -8,11 +8,13 @@ package. It keeps the retail executable path and runtime choices in
 The GUI exposes the opt-in 6DoF camera bridge, STRIDE-style motion/input,
 experimental temporal stereo, turn mode, units-per-meter calibration,
 projection/quad presentation mode, quad-space selection, and opt-in palette
-diagnostics and the opt-in mod-owned IK body overlay. The body overlay is off
-by default because it is a desktop-space diagnostic bridge, not native Catalyst
-body rendering. Palette diagnostics are
-development-only, disabled by default,
-and never enable GPU or retail-memory writes. An optional solved-motion clip
+diagnostics. The mod-owned IK arms/body overlay is enabled by default for the
+current public alpha and can be disabled with the explicit low-cost fallback.
+It remains a desktop-space bridge until a verified native Faith contract is
+supplied; it is not presented as native Catalyst body rendering. Palette
+diagnostics are development-only, disabled by default, and never enable GPU or
+retail-memory writes unless a reviewed native bone map is explicitly supplied.
+An optional solved-motion clip
 recording path is also exposed; clips are capped at 1,800 frames and written
 only when explicitly configured.
 Camera mode defaults to full-eye projection with stereo enabled. The quad path

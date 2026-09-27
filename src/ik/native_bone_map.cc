@@ -103,15 +103,32 @@ NativeBoneMapValidation ValidateNativeBoneMap(
   result.unique = true;
   for (std::size_t i = 0; i < map.joint_indices.size(); ++i) {
     const std::int32_t index = map.joint_indices[i];
-    if (index < 0 || static_cast<std::size_t>(index) >=
-                         observation.candidate.matrix_count) {
+    // -1 is an intentional partial-map marker. The native arm milestone
+    // rewrites only mapped arm entries and leaves Catalyst's torso/legs
+    // animation untouched.
+    if (index < 0) continue;
+    ++result.mapped_joints;
+    if (static_cast<std::size_t>(index) >= observation.candidate.matrix_count) {
       result.complete = false;
       continue;
     }
     for (std::size_t j = i + 1; j < map.joint_indices.size(); ++j) {
-      if (map.joint_indices[j] == index) result.unique = false;
+      if (map.joint_indices[j] >= 0 && map.joint_indices[j] == index)
+        result.unique = false;
     }
   }
+  constexpr BodyJoint kArmJoints[] = {
+      BodyJoint::kLeftShoulder, BodyJoint::kLeftElbow, BodyJoint::kLeftWrist,
+      BodyJoint::kLeftHand, BodyJoint::kRightShoulder, BodyJoint::kRightElbow,
+      BodyJoint::kRightWrist, BodyJoint::kRightHand};
+  result.arm_complete = true;
+  for (const BodyJoint joint : kArmJoints) {
+    if (map.joint_indices[static_cast<std::size_t>(joint)] < 0) {
+      result.arm_complete = false;
+      break;
+    }
+  }
+  if (result.mapped_joints == 0) result.complete = false;
   return result;
 }
 

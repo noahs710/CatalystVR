@@ -1,6 +1,16 @@
 # CatalystVR changelog
 
-## Unreleased — 1.5.1.19-alpha
+## Unreleased — 1.5.1.21-alpha
+
+- Native Faith-arm writer now supports verified eight-joint arm maps without
+  requiring torso or leg indices; unmapped regions remain game-animated.
+- Supplying `MECVR_NATIVE_BONE_MAP` now automatically enables bounded palette
+  capture/correlation, while all executable/resource/layout/freshness guards
+  remain fail-closed before any native write.
+
+- Enabled the tested mod-owned IK arms/body overlay by default in both GUI and
+  script launchers; `-DisableBodyOverlay` remains the explicit performance
+  fallback.
 
 - Fixed explicit `-DiscoverPalettes` capture mode being overridden by the
   launcher's default performance profile; requested contract discovery now

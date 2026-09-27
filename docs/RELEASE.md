@@ -66,8 +66,12 @@ usable by the next sub-project's engineers as proven foundation.
 - **Skeleton discovery**: opt-in `MECVR_DISCOVER_PALETTES=1` diagnostics scan
   bounded mapped SRV/CB buffers for 3x4/4x4 bone palettes. Verification keys
   off resource identity and layout, so animated matrix contents may change
-  without invalidating the candidate. The expensive discovery path is disabled
-  in normal play and performs no writes.
+  without invalidating the candidate. Supplying a reviewed
+  `MECVR_NATIVE_BONE_MAP` automatically enables the bounded capture/correlation
+  path; native writes still require every runtime and executable guard. Native
+  maps may cover the eight arm joints only, leaving torso/legs game-animated.
+  The expensive discovery path is disabled in normal play and performs no
+  writes unless a reviewed map is supplied.
 - **Native XR input**: optional OpenXR action set with per-hand grip spaces,
   trigger/squeeze/menu/face buttons, and thumbsticks, sampled from the XR
   worker and neutral on unsupported runtimes.
@@ -108,7 +112,8 @@ usable by the next sub-project's engineers as proven foundation.
   path is active. Any adapter, registration, resize, or mutex failure revokes
   readiness and returns to the established CPU fallback.
 - **Performance profiles**: the launcher defaults to `performance`, which
-  disables palette discovery and the optional overlay while preserving the
+  disables palette discovery and the optional overlay unless a native bone
+  contract or explicit overlay request is supplied, while preserving the
   shared GPU transport. `balanced` and `diagnostic` remain available for
   development. MECVR does not replace or fight AFR/frame-generation owned by
   the active OpenXR runtime.

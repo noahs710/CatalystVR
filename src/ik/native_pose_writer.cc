@@ -132,6 +132,7 @@ NativePoseWriteStatus RewriteNativePalette(
   }
 
   for (std::size_t joint = 0; joint < matrices.size(); ++joint) {
+    if (map.joint_indices[joint] < 0) continue;
     if (!FiniteAffine(matrices[joint])) {
       return NativePoseWriteStatus::kInvalidMatrix;
     }
@@ -151,6 +152,9 @@ NativePoseWriteStatus RewriteNativePalette(
 
   auto* destination = static_cast<std::uint8_t*>(output);
   for (std::size_t joint = 0; joint < matrices.size(); ++joint) {
+    // Partial native maps are deliberate: arm joints can be driven by XR
+    // while Catalyst retains ownership of torso and leg animation.
+    if (map.joint_indices[joint] < 0) continue;
     const auto palette_index =
         static_cast<std::size_t>(map.joint_indices[joint]);
     const std::size_t offset =

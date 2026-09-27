@@ -24,10 +24,16 @@ int main() {
   map.palette_offset = static_cast<std::uint32_t>(observation.candidate.offset);
   map.palette_stride = static_cast<std::uint32_t>(observation.candidate.stride);
   map.layout = observation.candidate.layout;
-  for (std::size_t i = 0; i < static_cast<std::size_t>(BodyJoint::kCount);
-       ++i) {
-    map.joint_indices[i] = static_cast<std::int32_t>(i);
-  }
+  map.joint_indices.fill(-1);
+  map.joint_indices[static_cast<std::size_t>(BodyJoint::kRoot)] = 0;
+  map.joint_indices[static_cast<std::size_t>(BodyJoint::kLeftShoulder)] = 5;
+  map.joint_indices[static_cast<std::size_t>(BodyJoint::kLeftElbow)] = 6;
+  map.joint_indices[static_cast<std::size_t>(BodyJoint::kLeftWrist)] = 7;
+  map.joint_indices[static_cast<std::size_t>(BodyJoint::kLeftHand)] = 8;
+  map.joint_indices[static_cast<std::size_t>(BodyJoint::kRightShoulder)] = 9;
+  map.joint_indices[static_cast<std::size_t>(BodyJoint::kRightElbow)] = 10;
+  map.joint_indices[static_cast<std::size_t>(BodyJoint::kRightWrist)] = 11;
+  map.joint_indices[static_cast<std::size_t>(BodyJoint::kRightHand)] = 12;
   assert(mecvr::ik::ValidateNativeBoneMap(map, observation, 0x1234).ready());
   assert(!mecvr::ik::ValidateNativeBoneMap(map, observation, 0x9999).ready());
 
@@ -46,14 +52,19 @@ int main() {
              << "palette_stride=48\n"
              << "layout=affine3x4\n"
              << "joint.root=0\n"
-             << "joint.head=4\n"
+             << "joint.left_shoulder=5\n"
+             << "joint.left_elbow=6\n"
+             << "joint.left_wrist=7\n"
              << "joint.left_hand=8\n"
+             << "joint.right_shoulder=9\n"
+             << "joint.right_elbow=10\n"
+             << "joint.right_wrist=11\n"
              << "joint.right_hand=12\n";
   }
   NativeBoneMap loaded;
   assert(mecvr::ik::LoadNativeBoneMap(contract_path, &loaded));
   assert(loaded.executable_fingerprint == 0x1234);
-  assert(loaded.joint_indices[static_cast<std::size_t>(BodyJoint::kHead)] == 4);
+  assert(loaded.joint_indices[static_cast<std::size_t>(BodyJoint::kLeftElbow)] == 6);
   assert(!mecvr::ik::LoadNativeBoneMap("missing-native-bone-map.contract",
                                       &loaded));
   std::remove(contract_path);

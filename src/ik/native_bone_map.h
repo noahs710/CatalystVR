@@ -29,11 +29,13 @@ struct NativeBoneMapValidation {
   bool resource_match = false;
   bool layout_match = false;
   bool complete = false;
+  bool arm_complete = false;
   bool unique = false;
+  std::size_t mapped_joints = 0;
 
   bool ready() const {
     return executable_match && resource_match && layout_match && complete &&
-           unique;
+           arm_complete && unique;
   }
 };
 

@@ -13,6 +13,18 @@ if (-not $script.Contains('[switch]$EnableStereo')) {
 if (-not $launcher.Contains('ReadSetting(L"Stereo", L"1")')) {
   $failures.Add('launcher stereo default must be immersive')
 }
+if (-not $launcher.Contains('ReadSetting(L"BodyOverlay", L"1")')) {
+  $failures.Add('launcher IK body overlay default must be enabled')
+}
+if (-not $script.Contains('$env:MECVR_ENABLE_BODY_OVERLAY = if ($DisableBodyOverlay)')) {
+  $failures.Add('launcher IK body overlay must have an explicit opt-out')
+}
+if (-not $script.Contains('$nativePoseRequested = -not [string]::IsNullOrWhiteSpace($NativeBoneMap)')) {
+  $failures.Add('native bone map must request palette correlation')
+}
+if (-not $script.Contains('$DiscoverPalettes -or $nativePoseRequested')) {
+  $failures.Add('native bone map must reach palette discovery mode')
+}
 if (-not $launcher.Contains('ReadSetting(L"Layer", L"projection")')) {
   $failures.Add('launcher presentation default must be projection')
 }
