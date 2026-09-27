@@ -58,11 +58,10 @@ if ($LaunchBackend -eq 'frosty') {
 
 $env:MECVR_ENABLE_CAMERA = if ($EnableCamera -or $Mode -eq 'camera') { '1' } else { '0' }
 $env:MECVR_ENABLE_INPUT = if ($EnableInput) { '1' } else { '0' }
-# The current render hook observes one game Present at a time. Enabling its
-# temporal eye-pair experiment by default produces cross-frame stereo and is
-# visibly worse than a correctly converged mono projection layer. Keep the
-# public alpha on the safe immersive fallback; opt in only for diagnostics.
-$env:MECVR_ENABLE_STEREO = if ($EnableStereo -and -not $DisableStereo) { '1' } else { '0' }
+# Immersive stereo is the public launcher default. The current producer pairs
+# consecutive game presents with an explicit epoch/pose gate; -DisableStereo
+# remains available as a performance diagnostic and mono fallback.
+$env:MECVR_ENABLE_STEREO = if ($DisableStereo) { '0' } else { '1' }
 $env:MECVR_ENABLE_BODY_OVERLAY = if ($EnableBodyOverlay) { '1' } else { '0' }
 $env:MECVR_ENABLE_PHYSICAL_JUMP = if ($DisablePhysicalJump) { '0' } else { '1' }
 $env:MECVR_ENABLE_PHYSICAL_CROUCH_INPUT =

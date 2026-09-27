@@ -92,9 +92,8 @@ usable by the next sub-project's engineers as proven foundation.
 - **Stereo gate**: independent eye buffers carry an explicit simulation epoch
   and pose sequence; mismatched or stale pairs are rejected, and the real
   backend switches from the mono quad to projection mode before acquisition.
-  `MECVR_ENABLE_STEREO=1` (explicit launcher opt-in; the public alpha defaults
-  to the correctly converged projection fallback) enables the experimental
-  temporal producer: consecutive game presents use the located left/right
+  `MECVR_ENABLE_STEREO=1` (the public launcher default; `-DisableStereo` opts
+  out) enables the experimental temporal producer: consecutive game presents use the located left/right
   camera poses and are paired for OpenXR submission. A simultaneous
   engine-native dual-pass producer remains the required final replacement.
 - **Tests**: ctest 35/35 green (2026-09-26, Release configuration), including

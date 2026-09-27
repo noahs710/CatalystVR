@@ -1,6 +1,11 @@
 # CatalystVR changelog
 
-## Unreleased — 1.5.1.16-alpha
+## Unreleased — 1.5.1.17-alpha
+
+- Launcher now enables the guarded temporal dual-eye producer by default so
+  public alpha launches request immersive stereo instead of mono projection.
+- `-DisableStereo` remains available for performance comparison and mono
+  fallback diagnostics.
 
 - Removed unconditional 64 KiB palette-content hashing from the read-only
   render path. Fingerprinting now runs only when an explicit native bone map
