@@ -2,7 +2,7 @@ Test project C:/Users/Gabrielle Monlea/Documents/MECVR/build
       Start  1: foundation_smoke
  1/35 Test  #1: foundation_smoke .................   Passed    0.01 sec
       Start  2: input_tests
- 2/35 Test  #2: input_tests ......................   Passed    0.00 sec
+ 2/35 Test  #2: input_tests ......................   Passed    0.01 sec
       Start  3: motion_scheme_test
  3/35 Test  #3: motion_scheme_test ...............   Passed    0.00 sec
       Start  4: comfort_filter_test
@@ -14,15 +14,15 @@ Test project C:/Users/Gabrielle Monlea/Documents/MECVR/build
       Start  7: real_xr_session_test
  7/35 Test  #7: real_xr_session_test .............   Passed    0.12 sec
       Start  8: xr_scene_test
- 8/35 Test  #8: xr_scene_test ....................   Passed    0.35 sec
+ 8/35 Test  #8: xr_scene_test ....................   Passed    0.36 sec
       Start  9: m2b_mono_transport_test
- 9/35 Test  #9: m2b_mono_transport_test ..........   Passed    3.31 sec
+ 9/35 Test  #9: m2b_mono_transport_test ..........   Passed    3.25 sec
       Start 10: m2b_rate_matrix_test
 10/35 Test #10: m2b_rate_matrix_test .............   Passed    0.09 sec
       Start 11: stereo_epoch_gate_test
 11/35 Test #11: stereo_epoch_gate_test ...........   Passed    0.01 sec
       Start 12: stereo_eye_classifier_test
-12/35 Test #12: stereo_eye_classifier_test .......   Passed    0.00 sec
+12/35 Test #12: stereo_eye_classifier_test .......   Passed    0.01 sec
       Start 13: shared_capture_mailbox_test
 13/35 Test #13: shared_capture_mailbox_test ......   Passed    0.00 sec
       Start 14: t10g_adapter_gate
@@ -32,13 +32,13 @@ Test project C:/Users/Gabrielle Monlea/Documents/MECVR/build
       Start 16: conflict_scanner_test
 16/35 Test #16: conflict_scanner_test ............   Passed    0.01 sec
       Start 17: camera_math_test
-17/35 Test #17: camera_math_test .................   Passed    0.00 sec
+17/35 Test #17: camera_math_test .................   Passed    0.01 sec
       Start 18: camera_harness_test
 18/35 Test #18: camera_harness_test ..............   Passed    0.00 sec
       Start 19: view_override_test
 19/35 Test #19: view_override_test ...............   Passed    0.00 sec
       Start 20: arm_ik_test
-20/35 Test #20: arm_ik_test ......................   Passed    0.00 sec
+20/35 Test #20: arm_ik_test ......................   Passed    0.01 sec
       Start 21: full_body_ik_test
 21/35 Test #21: full_body_ik_test ................   Passed    0.01 sec
       Start 22: parkour_intent_test
@@ -52,9 +52,9 @@ Test project C:/Users/Gabrielle Monlea/Documents/MECVR/build
       Start 26: body_overlay_geometry_test
 26/35 Test #26: body_overlay_geometry_test .......   Passed    0.00 sec
       Start 27: body_overlay_render_test
-27/35 Test #27: body_overlay_render_test .........   Passed    0.03 sec
+27/35 Test #27: body_overlay_render_test .........   Passed    0.02 sec
       Start 28: bone_palette_classifier_test
-28/35 Test #28: bone_palette_classifier_test .....   Passed    0.00 sec
+28/35 Test #28: bone_palette_classifier_test .....   Passed    0.01 sec
       Start 29: native_skeleton_adapter_test
 29/35 Test #29: native_skeleton_adapter_test .....   Passed    0.00 sec
       Start 30: m3a_slot_proof
@@ -62,9 +62,9 @@ Test project C:/Users/Gabrielle Monlea/Documents/MECVR/build
       Start 31: force_mode_test
 31/35 Test #31: force_mode_test ..................   Passed    0.00 sec
       Start 32: immersive_defaults_test
-32/35 Test #32: immersive_defaults_test ..........   Passed    0.21 sec
+32/35 Test #32: immersive_defaults_test ..........   Passed    0.22 sec
       Start 33: early_injection_test
-33/35 Test #33: early_injection_test .............   Passed    0.20 sec
+33/35 Test #33: early_injection_test .............   Passed    0.19 sec
       Start 34: shared_blit_math_test
 34/35 Test #34: shared_blit_math_test ............   Passed    0.01 sec
       Start 35: shared_texture_contract_test
@@ -72,4 +72,4 @@ Test project C:/Users/Gabrielle Monlea/Documents/MECVR/build
 
 100% tests passed out of 35
 
-Total Test time (real) =   4.70 sec
+Total Test time (real) =   4.64 sec

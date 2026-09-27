@@ -84,4 +84,51 @@ void NativeSkeletonAdapter::reset() {
   last_frame_ = 0;
 }
 
+NativePaletteTargetTracker::NativePaletteTargetTracker(
+    std::uint64_t stable_frames)
+    : stable_frames_(std::max<std::uint64_t>(stable_frames, 1)) {}
+
+void NativePaletteTargetTracker::observePalette(
+    std::uint32_t resource_id, const BonePaletteCandidate& candidate,
+    std::uint64_t present_index) {
+  if (resource_id == 0 || present_index == 0 || !candidate.valid()) return;
+  if (state_.resource_id != resource_id || !candidate_.valid() ||
+      candidate_.offset != candidate.offset ||
+      candidate_.stride != candidate.stride ||
+      candidate_.layout != candidate.layout) {
+    reset();
+    state_.resource_id = resource_id;
+    candidate_ = candidate;
+  }
+  if (present_index <= last_palette_present_) return;
+  last_palette_present_ = present_index;
+  state_.present_index = present_index;
+  ++state_.palette_frames;
+  state_.verified = state_.palette_frames >= stable_frames_ &&
+                    state_.draw_bound_frames >= stable_frames_;
+}
+
+void NativePaletteTargetTracker::noteDraw(
+    std::uint32_t resource_id, std::uint64_t present_index,
+    std::uint64_t draw_index, std::uintptr_t vertex_shader,
+    std::uintptr_t pixel_shader) {
+  if (resource_id == 0 || present_index == 0 ||
+      state_.resource_id != resource_id || !candidate_.valid()) return;
+  if (present_index == last_draw_present_) return;
+  last_draw_present_ = present_index;
+  state_.draw_index = draw_index;
+  state_.vertex_shader = vertex_shader;
+  state_.pixel_shader = pixel_shader;
+  ++state_.draw_bound_frames;
+  state_.verified = state_.palette_frames >= stable_frames_ &&
+                    state_.draw_bound_frames >= stable_frames_;
+}
+
+void NativePaletteTargetTracker::reset() {
+  state_ = {};
+  candidate_ = {};
+  last_palette_present_ = 0;
+  last_draw_present_ = 0;
+}
+
 }  // namespace mecvr::render

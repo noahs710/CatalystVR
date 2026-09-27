@@ -1,5 +1,5 @@
-MECVR version: 1.1.1.1-alpha
-Built UTC: 2026-09-27T13:50:59.1367881Z
+MECVR version: 1.2.1.1-alpha
+Built UTC: 2026-09-27T13:52:35.8700873Z
 Artifact: preview foundation; not a complete retail game conversion.
 Stereo: the public alpha defaults to correctly converged immersive projection; temporal per-eye rendering is explicit opt-in and simultaneous native dual-pass proof is pending.
 Transport: capability-gated D3D11 shared-texture GPU path is default; CPU readback is the automatic fallback.

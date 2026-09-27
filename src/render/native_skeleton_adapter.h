@@ -52,4 +52,38 @@ class NativeSkeletonAdapter {
   std::uint64_t last_frame_ = 0;
 };
 
+struct NativePaletteTargetSnapshot {
+  std::uint32_t resource_id = 0;
+  std::uint64_t present_index = 0;
+  std::uint64_t draw_index = 0;
+  std::uintptr_t vertex_shader = 0;
+  std::uintptr_t pixel_shader = 0;
+  std::uint64_t palette_frames = 0;
+  std::uint64_t draw_bound_frames = 0;
+  bool verified = false;
+};
+
+// Read-only correlation gate. A plausible palette is not a native skeleton
+// target until the same resource is observed in repeatable draw bindings.
+class NativePaletteTargetTracker {
+ public:
+  explicit NativePaletteTargetTracker(std::uint64_t stable_frames = 3);
+
+  void observePalette(std::uint32_t resource_id,
+                      const BonePaletteCandidate& candidate,
+                      std::uint64_t present_index);
+  void noteDraw(std::uint32_t resource_id, std::uint64_t present_index,
+                std::uint64_t draw_index, std::uintptr_t vertex_shader,
+                std::uintptr_t pixel_shader);
+  NativePaletteTargetSnapshot snapshot() const { return state_; }
+  void reset();
+
+ private:
+  const std::uint64_t stable_frames_;
+  NativePaletteTargetSnapshot state_{};
+  BonePaletteCandidate candidate_{};
+  std::uint64_t last_palette_present_ = 0;
+  std::uint64_t last_draw_present_ = 0;
+};
+
 }  // namespace mecvr::render

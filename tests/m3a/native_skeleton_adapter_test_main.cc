@@ -77,5 +77,16 @@ int main() {
   assert(!adapter.observe(observation));
   adapter.reset();
   assert(adapter.snapshot().observations == 0);
+
+  mecvr::render::NativePaletteTargetTracker target(3);
+  for (std::uint64_t frame = 1; frame <= 3; ++frame) {
+    target.observePalette(9, candidate, frame);
+    target.noteDraw(9, frame, frame * 10, 0x11, 0x22);
+  }
+  const auto target_state = target.snapshot();
+  assert(target_state.verified);
+  assert(target_state.draw_bound_frames == 3);
+  target.noteDraw(10, 4, 40, 0x33, 0x44);
+  assert(target.snapshot().resource_id == 9);
   return 0;
 }

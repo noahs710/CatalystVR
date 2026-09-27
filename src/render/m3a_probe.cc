@@ -318,6 +318,7 @@ volatile LONGLONG g_body_overlay_frames = 0;
 volatile LONGLONG g_palette_candidates = 0;
 bool g_palette_discovery_enabled = false;
 mecvr::render::NativeSkeletonAdapter g_native_skeleton_adapter;
+mecvr::render::NativePaletteTargetTracker g_native_palette_target;
 
 // Current GPU state snapshot (stamped on captures).
 ID3D11RenderTargetView* g_rtv0 = nullptr;
@@ -495,6 +496,7 @@ void NoteNonCbPalette(ID3D11Resource* res, const PendingMap& pending) {
          static_cast<unsigned long long>(verified.stable_observations),
          static_cast<unsigned long long>(g_present_idx), g_phase);
   }
+  g_native_palette_target.observePalette(record->id, candidate, g_present_idx);
   if (candidate.matrix_count <= record->matrices) return;
   if (record->matrices == 0) InterlockedIncrement64(&g_palette_candidates);
   record->offset = static_cast<UINT>(candidate.offset);
@@ -1110,6 +1112,23 @@ void STDMETHODCALLTYPE HookDrawIndexed(ID3D11DeviceContext* self, UINT count,
                            : nullptr;
   if (orig != nullptr) orig(self, count, start, base);
   if (g_armed && g_palette_discovery_enabled) {
+    const auto note_srv = [](ID3D11ShaderResourceView* srv) {
+      if (srv == nullptr) return;
+      ID3D11Resource* resource = nullptr;
+      srv->GetResource(&resource);
+      if (resource != nullptr) {
+        auto* record = PaletteRecordFor(resource, 0, 0);
+        if (record != nullptr) {
+          g_native_palette_target.noteDraw(
+              record->id, g_present_idx, static_cast<std::uint64_t>(g_draw_idx),
+              reinterpret_cast<std::uintptr_t>(g_vs),
+              reinterpret_cast<std::uintptr_t>(g_ps));
+        }
+        resource->Release();
+      }
+    };
+    note_srv(g_vs_srv0);
+    note_srv(g_ps_srv0);
     const LONG slot = InterlockedIncrement(&g_draw_correlation_count) - 1;
     if (slot >= 0 && slot < kMaxDrawCorrelationSamples) {
       auto& s = g_draw_correlation[slot];
@@ -1129,6 +1148,23 @@ void STDMETHODCALLTYPE HookDraw(ID3D11DeviceContext* self, UINT count,
       e != nullptr ? reinterpret_cast<DrawFn>(e->orig[kH_Draw]) : nullptr;
   if (orig != nullptr) orig(self, count, start);
   if (g_armed && g_palette_discovery_enabled) {
+    const auto note_srv = [](ID3D11ShaderResourceView* srv) {
+      if (srv == nullptr) return;
+      ID3D11Resource* resource = nullptr;
+      srv->GetResource(&resource);
+      if (resource != nullptr) {
+        auto* record = PaletteRecordFor(resource, 0, 0);
+        if (record != nullptr) {
+          g_native_palette_target.noteDraw(
+              record->id, g_present_idx, static_cast<std::uint64_t>(g_draw_idx),
+              reinterpret_cast<std::uintptr_t>(g_vs),
+              reinterpret_cast<std::uintptr_t>(g_ps));
+        }
+        resource->Release();
+      }
+    };
+    note_srv(g_vs_srv0);
+    note_srv(g_ps_srv0);
     const LONG slot = InterlockedIncrement(&g_draw_correlation_count) - 1;
     if (slot >= 0 && slot < kMaxDrawCorrelationSamples) {
       auto& s = g_draw_correlation[slot];
