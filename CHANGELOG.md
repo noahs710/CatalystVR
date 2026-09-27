@@ -1,5 +1,16 @@
 # CatalystVR changelog
 
+## Unreleased — 1.5.2.1-alpha
+
+- Replaced the mod-owned arm fallback's hand-tuned screen-space projection
+  with the current tracked OpenXR eye pose and runtime asymmetric frustum.
+  Controller motion now retains horizontal, vertical, and depth translation
+  through IK and visible rendering in the same coordinate system as the scene.
+- Removed the fixed-IPD overlay approximation. Each temporal eye now projects
+  arms, hands, fingers, and weapon geometry from its actual located pose.
+- Added regression proof that raising a tracked arm changes visible vertical
+  geometry and that distinct runtime eye poses produce distinct stereo output.
+
 ## Unreleased — 1.5.2.0-alpha
 
 - Replaced Catalyst's desktop projection at the confirmed scene-CB byte 96

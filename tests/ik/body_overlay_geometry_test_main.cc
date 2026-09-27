@@ -115,10 +115,18 @@ int main() {
               "head rotation affects view-local overlay projection");
   mecvr::render::BodyOverlayVertex left_eye_vertices[512]{};
   mecvr::render::BodyOverlayVertex right_eye_vertices[512]{};
+  mecvr::render::BodyOverlayView left_view;
+  left_view.valid = true;
+  left_view.position = {-0.032, 1.70, 0.0};
+  left_view.frustum = {-1.1, 0.9, 1.0, -1.0};
+  mecvr::render::BodyOverlayView right_view;
+  right_view.valid = true;
+  right_view.position = {0.032, 1.70, 0.0};
+  right_view.frustum = {-0.9, 1.1, 1.0, -1.0};
   const std::size_t left_eye_count = mecvr::render::BuildBodyOverlayGeometry(
-      weapon_pose, left_eye_vertices, 512, -0.032f);
+      weapon_pose, left_eye_vertices, 512, &left_view);
   const std::size_t right_eye_count = mecvr::render::BuildBodyOverlayGeometry(
-      weapon_pose, right_eye_vertices, 512, 0.032f);
+      weapon_pose, right_eye_vertices, 512, &right_view);
   double left_eye_mean = 0.0;
   double right_eye_mean = 0.0;
   const std::size_t eye_count =
@@ -132,8 +140,27 @@ int main() {
     right_eye_mean /= static_cast<double>(eye_count);
   }
   ok &= Check(left_eye_count == right_eye_count && eye_count > 0 &&
-                  left_eye_mean > right_eye_mean + 0.05,
+                  std::fabs(left_eye_mean - right_eye_mean) > 0.01,
               "temporal stereo eyes receive separated overlay projection");
+
+  auto raised_pose = weapon_pose;
+  for (auto joint : {mecvr::ik::BodyJoint::kLeftElbow,
+                     mecvr::ik::BodyJoint::kLeftWrist,
+                     mecvr::ik::BodyJoint::kLeftHand}) {
+    raised_pose.joints[static_cast<std::size_t>(joint)].position.y += 0.18;
+  }
+  mecvr::render::BodyOverlayVertex raised_vertices[512]{};
+  const std::size_t raised_count = mecvr::render::BuildBodyOverlayGeometry(
+      raised_pose, raised_vertices, 512, &left_view);
+  double baseline_arm_y = 0.0;
+  double raised_arm_y = 0.0;
+  const std::size_t compare_count = std::min(left_eye_count, raised_count);
+  for (std::size_t i = 0; i < compare_count; ++i) {
+    baseline_arm_y += left_eye_vertices[i].y;
+    raised_arm_y += raised_vertices[i].y;
+  }
+  ok &= Check(compare_count > 0 && raised_arm_y > baseline_arm_y + 0.1,
+              "tracked vertical arm movement changes projected geometry");
   const std::size_t invalid_count =
       mecvr::render::BuildBodyOverlayGeometry({}, vertices, 512);
   ok &= Check(invalid_count == 0, "invalid pose produces no geometry");

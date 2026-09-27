@@ -20,7 +20,7 @@ class BodyOverlay {
 
   bool render(ID3D11DeviceContext* context, ID3D11RenderTargetView* target,
               const mecvr::ik::HumanoidPoseFrame& pose,
-              float eye_offset_x = 0.0f);
+              const BodyOverlayView* view = nullptr);
   void reset();
 
  private:

@@ -58,8 +58,12 @@ int main() {
   ok &= Check(replayed.valid, "sampled motion frame remains valid");
 
   mecvr::render::BodyOverlayVertex vertices[512]{};
+  mecvr::render::BodyOverlayView view;
+  view.valid = true;
+  view.position = {-0.032, 1.70, 0.0};
+  view.frustum = {-1.1, 0.9, 1.0, -1.0};
   const std::size_t count = mecvr::render::BuildBodyOverlayGeometry(
-      replayed, vertices, 512, -0.032f);
+      replayed, vertices, 512, &view);
   ok &= Check(count > 0 && count % 3 == 0,
               "sampled pose produces stereo overlay triangles");
   for (std::size_t i = 0; i < count; ++i) {

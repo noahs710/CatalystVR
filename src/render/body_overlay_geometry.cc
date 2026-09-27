@@ -33,25 +33,45 @@ Point3 Rotate(const mecvr::camera::Quat& q, Point3 value) {
           value.z + 2.0 * (q.w * uv.z + uuv.z)};
 }
 
-Point3 HeadLocal(const mecvr::ik::HumanoidPoseFrame& pose, Point3 point) {
+Point3 ViewLocal(const mecvr::ik::HumanoidPoseFrame& pose, Point3 point,
+                 const BodyOverlayView* view) {
   const auto& head = pose.joint(Joint::kHead);
-  const Point3 delta{point.x - head.position.x, point.y - head.position.y,
-                     point.z - head.position.z};
+  const auto position = view != nullptr && view->valid
+                            ? view->position
+                            : head.position;
+  const auto orientation = view != nullptr && view->valid
+                               ? view->orientation
+                               : head.orientation;
+  const Point3 delta{point.x - position.x, point.y - position.y,
+                     point.z - position.z};
   // The overlay is composited after the game scene, so its 2D coordinates
   // must be expressed in the current HMD view rather than world axes. The
   // conjugate is the inverse for a normalized tracking quaternion.
-  const mecvr::camera::Quat inverse{-head.orientation.x,
-                                    -head.orientation.y,
-                                    -head.orientation.z,
-                                    head.orientation.w};
+  const mecvr::camera::Quat inverse{-orientation.x, -orientation.y,
+                                     -orientation.z, orientation.w};
   return Rotate(inverse, delta);
 }
 
 Point2 Project(const mecvr::ik::HumanoidPoseFrame& pose, Joint joint,
-               float eye_offset_x) {
+               const BodyOverlayView* view) {
   const auto& position = pose.joint(joint).position;
-  Point3 local = HeadLocal(pose, {position.x, position.y, position.z});
-  local.x -= static_cast<double>(eye_offset_x);
+  const Point3 local = ViewLocal(pose, {position.x, position.y, position.z}, view);
+  if (view != nullptr && view->valid && local.z < -0.02) {
+    const double width = view->frustum.right - view->frustum.left;
+    const double height = view->frustum.up - view->frustum.down;
+    if (width > 0.01 && height > 0.01) {
+      const double sx = 2.0 / width;
+      const double sy = 2.0 / height;
+      const double ox = (view->frustum.right + view->frustum.left) / width;
+      const double oy = (view->frustum.up + view->frustum.down) / height;
+      return {static_cast<float>(std::clamp(
+                  (sx * local.x + ox * local.z) / -local.z, -0.98, 0.98)),
+              static_cast<float>(std::clamp(
+                  (sy * local.y + oy * local.z) / -local.z, -0.92, 0.92)),
+              static_cast<float>(std::clamp((-local.z - 0.05) / 1.5,
+                                            0.05, 0.95))};
+    }
+  }
   const double perspective =
       1.0 / std::clamp(1.0 + local.z * 0.35, 0.78, 1.22);
   return {static_cast<float>(std::clamp(local.x * 1.35 * perspective,
@@ -62,9 +82,24 @@ Point2 Project(const mecvr::ik::HumanoidPoseFrame& pose, Joint joint,
 }
 
 Point2 ProjectPoint(const mecvr::ik::HumanoidPoseFrame& pose, Point3 point,
-                    float eye_offset_x) {
-  Point3 local = HeadLocal(pose, point);
-  local.x -= static_cast<double>(eye_offset_x);
+                     const BodyOverlayView* view) {
+  const Point3 local = ViewLocal(pose, point, view);
+  if (view != nullptr && view->valid && local.z < -0.02) {
+    const double width = view->frustum.right - view->frustum.left;
+    const double height = view->frustum.up - view->frustum.down;
+    if (width > 0.01 && height > 0.01) {
+      const double sx = 2.0 / width;
+      const double sy = 2.0 / height;
+      const double ox = (view->frustum.right + view->frustum.left) / width;
+      const double oy = (view->frustum.up + view->frustum.down) / height;
+      return {static_cast<float>(std::clamp(
+                  (sx * local.x + ox * local.z) / -local.z, -0.98, 0.98)),
+              static_cast<float>(std::clamp(
+                  (sy * local.y + oy * local.z) / -local.z, -0.92, 0.92)),
+              static_cast<float>(std::clamp((-local.z - 0.05) / 1.5,
+                                            0.05, 0.95))};
+    }
+  }
   const double perspective =
       1.0 / std::clamp(1.0 + local.z * 0.35, 0.78, 1.22);
   return {static_cast<float>(std::clamp(local.x * 1.35 * perspective,
@@ -174,13 +209,13 @@ void MuzzleFlash(BodyOverlayVertex* output, std::size_t capacity,
 
 std::size_t BuildBodyOverlayGeometry(
     const mecvr::ik::HumanoidPoseFrame& pose, BodyOverlayVertex* output,
-    std::size_t capacity, float eye_offset_x) {
+    std::size_t capacity, const BodyOverlayView* view) {
   if (!pose.valid || output == nullptr || capacity == 0) return 0;
   std::size_t count = 0;
   const auto add = [&](Joint a, Joint b, float width, float r, float g,
                        float blue) {
-    Capsule(output, capacity, &count, Project(pose, a, eye_offset_x),
-            Project(pose, b, eye_offset_x),
+    Capsule(output, capacity, &count, Project(pose, a, view),
+            Project(pose, b, view),
             width, r, g, blue);
   };
   add(Joint::kPelvis, Joint::kChest, 0.045f, 0.82f, 0.82f, 0.88f);
@@ -196,8 +231,8 @@ std::size_t BuildBodyOverlayGeometry(
   add(Joint::kRightHip, Joint::kRightKnee, 0.040f, 0.68f, 0.68f, 0.76f);
   add(Joint::kRightKnee, Joint::kRightAnkle, 0.032f, 0.68f, 0.68f, 0.76f);
 
-  const Point2 left_hand = Project(pose, Joint::kLeftHand, eye_offset_x);
-  const Point2 right_hand = Project(pose, Joint::kRightHand, eye_offset_x);
+  const Point2 left_hand = Project(pose, Joint::kLeftHand, view);
+  const Point2 right_hand = Project(pose, Joint::kRightHand, view);
   Disc(output, capacity, &count, left_hand, 0.06f, 0.10f, 0.82f, 1.0f);
   Disc(output, capacity, &count, right_hand, 0.06f, 1.0f, 0.34f, 0.12f);
   HandFingers(output, capacity, &count, left_hand, -1.0f,
@@ -216,7 +251,7 @@ std::size_t BuildBodyOverlayGeometry(
     const auto& position = tracked.position;
     const Point2 muzzle = ProjectPoint(
         pose, {position.x + direction.x * 0.24, position.y + direction.y * 0.24,
-               position.z + direction.z * 0.24}, eye_offset_x);
+               position.z + direction.z * 0.24}, view);
     const float grip = std::clamp(pose.grip_values[hand], 0.0f, 1.0f);
     Capsule(output, capacity, &count, hand_point, muzzle,
             0.018f + grip * 0.018f, 0.70f, 0.76f, 0.80f);

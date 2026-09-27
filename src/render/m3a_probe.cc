@@ -2613,19 +2613,25 @@ HRESULT STDMETHODCALLTYPE HookPresent(IDXGISwapChain* self, UINT sync,
       g_stereo_pair_pose.load(std::memory_order_acquire) != 0;
   const std::uint32_t stereo_eye =
       g_stereo_eye.load(std::memory_order_acquire) & 1u;
-  // The procedural overlay is rendered in the game's current view, so give
-  // each temporal eye its half-IPD horizontal separation. This keeps the
-  // mod-owned arms, hands, and weapon silhouettes from becoming a flat card
-  // when the capture worker assembles the stereo pair.
-  constexpr float kOverlayHalfIpdMeters = 0.032f;
-  const float body_eye_offset =
-      temporal_stereo ? (stereo_eye == 0 ? -kOverlayHalfIpdMeters
-                                         : kOverlayHalfIpdMeters)
-                      : 0.0f;
   if (g_body_overlay_enabled && ctx != nullptr && check_rtv != nullptr) {
     mecvr::ik::HumanoidPoseFrame body_pose;
     if (g_body_pose_mailbox.latest(&body_pose)) {
-      if (g_body_overlay.render(ctx, check_rtv, body_pose, body_eye_offset))
+      mecvr::render::BodyOverlayView body_view;
+      mecvr::camera::XRFramePoseSnapshot snapshot;
+      if (g_pose_mailbox.latest(&snapshot)) {
+        const std::uint32_t eye = temporal_stereo ? stereo_eye : 0u;
+        const auto& xr_view = snapshot.views[eye];
+        body_view.position = {xr_view.pose.position.x, xr_view.pose.position.y,
+                              xr_view.pose.position.z};
+        body_view.orientation = ToCameraQuat(xr_view.pose.orientation);
+        body_view.frustum = {
+            std::tan(static_cast<double>(xr_view.fov.angle_left)),
+            std::tan(static_cast<double>(xr_view.fov.angle_right)),
+            std::tan(static_cast<double>(xr_view.fov.angle_up)),
+            std::tan(static_cast<double>(xr_view.fov.angle_down))};
+        body_view.valid = snapshot.position_valid && snapshot.orientation_valid;
+      }
+      if (g_body_overlay.render(ctx, check_rtv, body_pose, &body_view))
         InterlockedIncrement64(&g_body_overlay_frames);
     }
   }

@@ -33,7 +33,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 if ([string]::IsNullOrWhiteSpace($PackageRoot)) {
-  $PackageRoot = Join-Path $PSScriptRoot '..\dist\MECVR-1.5.2.0-alpha'
+  $PackageRoot = Join-Path $PSScriptRoot '..\dist\MECVR-1.5.2.1-alpha'
 }
 $root = (Resolve-Path $PackageRoot).Path
 $bin = Join-Path $root 'bin'

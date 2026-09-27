@@ -202,7 +202,7 @@ bool BodyOverlay::ensureResources(ID3D11Device* device) {
 bool BodyOverlay::render(ID3D11DeviceContext* context,
                            ID3D11RenderTargetView* target,
                            const mecvr::ik::HumanoidPoseFrame& pose,
-                           float eye_offset_x) {
+                           const BodyOverlayView* view) {
   if (context == nullptr || target == nullptr || !pose.valid) return false;
   ID3D11Device* device = nullptr;
   context->GetDevice(&device);
@@ -212,8 +212,7 @@ bool BodyOverlay::render(ID3D11DeviceContext* context,
 
   std::array<BodyOverlayVertex, 512> vertices{};
     const std::size_t count =
-       BuildBodyOverlayGeometry(pose, vertices.data(), vertices.size(),
-                                eye_offset_x);
+       BuildBodyOverlayGeometry(pose, vertices.data(), vertices.size(), view);
   if (count == 0) return false;
   for (std::size_t i = 0; i < count; ++i) {
     if (!Finite(vertices[i].x) || !Finite(vertices[i].y) ||
