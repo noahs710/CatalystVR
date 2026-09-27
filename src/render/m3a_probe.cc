@@ -1196,6 +1196,37 @@ void STDMETHODCALLTYPE HookPSSetShader(ID3D11DeviceContext* self,
   OvhdAdd(g_ovh_shader, QpcNow() - t0);
 }
 
+// Record the bound palette against every draw family.  Skinned meshes may be
+// emitted through instanced or indirect draws; limiting correlation to the two
+// non-instanced entry points makes a real palette look unused.
+void NotePaletteDraw(UINT count, UINT start, INT base, std::uint8_t kind) {
+  if (!g_armed || !g_palette_discovery_enabled) return;
+  const auto note_srv = [](ID3D11ShaderResourceView* srv) {
+    if (srv == nullptr) return;
+    ID3D11Resource* resource = nullptr;
+    srv->GetResource(&resource);
+    if (resource != nullptr) {
+      auto* record = PaletteRecordFor(resource, 0, 0);
+      if (record != nullptr) {
+        g_native_palette_target.noteDraw(
+            record->id, g_present_idx, static_cast<std::uint64_t>(g_draw_idx),
+            reinterpret_cast<std::uintptr_t>(g_vs),
+            reinterpret_cast<std::uintptr_t>(g_ps));
+      }
+      resource->Release();
+    }
+  };
+  note_srv(g_vs_srv0);
+  note_srv(g_ps_srv0);
+  const LONG slot = InterlockedIncrement(&g_draw_correlation_count) - 1;
+  if (slot >= 0 && slot < kMaxDrawCorrelationSamples) {
+    auto& s = g_draw_correlation[slot];
+    s = {static_cast<std::uint64_t>(g_draw_idx), g_present_idx, g_vs, g_ps,
+         g_ia_vb0, g_ia_ib, g_vs_srv0, g_ps_srv0, count, start, base,
+         g_ia_vb_stride, g_ia_vb_offset, g_ia_ib_format, kind};
+  }
+}
+
 // Draw hooks count only: untimed, two increments, no logging.
 void STDMETHODCALLTYPE HookDrawIndexed(ID3D11DeviceContext* self, UINT count,
                                        UINT start, INT base) {
@@ -1205,32 +1236,7 @@ void STDMETHODCALLTYPE HookDrawIndexed(ID3D11DeviceContext* self, UINT count,
                            : nullptr;
   if (orig != nullptr) orig(self, count, start, base);
   NoteContextDraw(self);
-  if (g_armed && g_palette_discovery_enabled) {
-    const auto note_srv = [](ID3D11ShaderResourceView* srv) {
-      if (srv == nullptr) return;
-      ID3D11Resource* resource = nullptr;
-      srv->GetResource(&resource);
-      if (resource != nullptr) {
-        auto* record = PaletteRecordFor(resource, 0, 0);
-        if (record != nullptr) {
-          g_native_palette_target.noteDraw(
-              record->id, g_present_idx, static_cast<std::uint64_t>(g_draw_idx),
-              reinterpret_cast<std::uintptr_t>(g_vs),
-              reinterpret_cast<std::uintptr_t>(g_ps));
-        }
-        resource->Release();
-      }
-    };
-    note_srv(g_vs_srv0);
-    note_srv(g_ps_srv0);
-    const LONG slot = InterlockedIncrement(&g_draw_correlation_count) - 1;
-    if (slot >= 0 && slot < kMaxDrawCorrelationSamples) {
-      auto& s = g_draw_correlation[slot];
-      s = {static_cast<std::uint64_t>(g_draw_idx), g_present_idx, g_vs, g_ps,
-           g_ia_vb0, g_ia_ib, g_vs_srv0, g_ps_srv0, count, start, base,
-           g_ia_vb_stride, g_ia_vb_offset, g_ia_ib_format, 0};
-    }
-  }
+  NotePaletteDraw(count, start, base, 0);
   InterlockedIncrement64(&g_draws);
   InterlockedIncrement64(&g_draw_idx);
 }
@@ -1242,32 +1248,7 @@ void STDMETHODCALLTYPE HookDraw(ID3D11DeviceContext* self, UINT count,
       e != nullptr ? reinterpret_cast<DrawFn>(e->orig[kH_Draw]) : nullptr;
   if (orig != nullptr) orig(self, count, start);
   NoteContextDraw(self);
-  if (g_armed && g_palette_discovery_enabled) {
-    const auto note_srv = [](ID3D11ShaderResourceView* srv) {
-      if (srv == nullptr) return;
-      ID3D11Resource* resource = nullptr;
-      srv->GetResource(&resource);
-      if (resource != nullptr) {
-        auto* record = PaletteRecordFor(resource, 0, 0);
-        if (record != nullptr) {
-          g_native_palette_target.noteDraw(
-              record->id, g_present_idx, static_cast<std::uint64_t>(g_draw_idx),
-              reinterpret_cast<std::uintptr_t>(g_vs),
-              reinterpret_cast<std::uintptr_t>(g_ps));
-        }
-        resource->Release();
-      }
-    };
-    note_srv(g_vs_srv0);
-    note_srv(g_ps_srv0);
-    const LONG slot = InterlockedIncrement(&g_draw_correlation_count) - 1;
-    if (slot >= 0 && slot < kMaxDrawCorrelationSamples) {
-      auto& s = g_draw_correlation[slot];
-      s = {static_cast<std::uint64_t>(g_draw_idx), g_present_idx, g_vs, g_ps,
-           g_ia_vb0, g_ia_ib, g_vs_srv0, g_ps_srv0, count, start, 0,
-           g_ia_vb_stride, g_ia_vb_offset, g_ia_ib_format, 1};
-    }
-  }
+  NotePaletteDraw(count, start, 0, 1);
   InterlockedIncrement64(&g_draws);
   InterlockedIncrement64(&g_draw_idx);
 }
@@ -1282,6 +1263,7 @@ void STDMETHODCALLTYPE HookDrawIndexedInst(ID3D11DeviceContext* self,
                                : nullptr;
   if (orig != nullptr) orig(self, cpi, inst, start, base, si);
   NoteContextDraw(self);
+  NotePaletteDraw(cpi, start, base, 2);
   InterlockedIncrement64(&g_draws);
   InterlockedIncrement64(&g_draw_idx);
 }
@@ -1294,6 +1276,7 @@ void STDMETHODCALLTYPE HookDrawInst(ID3D11DeviceContext* self, UINT cpv,
                         : nullptr;
   if (orig != nullptr) orig(self, cpv, inst, start, si);
   NoteContextDraw(self);
+  NotePaletteDraw(cpv, start, 0, 3);
   InterlockedIncrement64(&g_draws);
   InterlockedIncrement64(&g_draw_idx);
 }
@@ -1305,6 +1288,7 @@ void STDMETHODCALLTYPE HookDrawAuto(ID3D11DeviceContext* self) {
                         : nullptr;
   if (orig != nullptr) orig(self);
   NoteContextDraw(self);
+  NotePaletteDraw(0, 0, 0, 4);
   InterlockedIncrement64(&g_draws);
   InterlockedIncrement64(&g_draw_idx);
 }
@@ -1320,6 +1304,7 @@ void STDMETHODCALLTYPE HookDrawIndexedInstIndirect(ID3D11DeviceContext* self,
           : nullptr;
   if (orig != nullptr) orig(self, args, offset);
   NoteContextDraw(self);
+  NotePaletteDraw(0, offset, 0, 5);
   InterlockedIncrement64(&g_draws);
   InterlockedIncrement64(&g_draw_idx);
 }
@@ -1335,6 +1320,7 @@ void STDMETHODCALLTYPE HookDrawInstIndirect(ID3D11DeviceContext* self,
           : nullptr;
   if (orig != nullptr) orig(self, args, offset);
   NoteContextDraw(self);
+  NotePaletteDraw(0, offset, 0, 6);
   InterlockedIncrement64(&g_draws);
   InterlockedIncrement64(&g_draw_idx);
 }

@@ -1,6 +1,10 @@
 # CatalystVR changelog
 
-## Unreleased — 1.5.1.9-alpha
+## Unreleased — 1.5.1.10-alpha
+
+- Extended D3D11 native-palette draw correlation to instanced and indirect
+  draw families, so skinned meshes are not discarded merely because they do
+  not use the two basic draw entry points.
 
 - Added a persisted launcher control for preserving runtime-owned frame pacing,
   AFR, and compositor frame generation.
