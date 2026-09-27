@@ -59,6 +59,7 @@ struct NativePaletteTargetSnapshot {
   std::uintptr_t vertex_shader = 0;
   std::uintptr_t pixel_shader = 0;
   std::uint64_t palette_frames = 0;
+  std::uint64_t vertex_bound_frames = 0;
   std::uint64_t draw_bound_frames = 0;
   bool verified = false;
 };
@@ -75,6 +76,10 @@ class NativePaletteTargetTracker {
   void noteDraw(std::uint32_t resource_id, std::uint64_t present_index,
                 std::uint64_t draw_index, std::uintptr_t vertex_shader,
                 std::uintptr_t pixel_shader);
+  void noteVertexBinding(std::uint32_t resource_id,
+                         std::uint64_t present_index,
+                         std::uintptr_t vertex_shader,
+                         std::uintptr_t pixel_shader);
   NativePaletteTargetSnapshot snapshot() const { return state_; }
   void reset();
 

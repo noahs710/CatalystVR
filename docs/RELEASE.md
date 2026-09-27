@@ -73,6 +73,10 @@ usable by the next sub-project's engineers as proven foundation.
   Deferred-context VS/PS shader-resource state is tracked in a bounded
   per-context window so native palette-to-draw correlation remains valid when
   Catalyst records work away from the immediate context. The probe also
+  accepts repeatable vertex-stage SRV binding evidence when Catalyst exposes
+  palette binds without observable Draw or ExecuteCommandList callbacks; this
+  path still requires the same classified resource, shader, freshness, map,
+  executable, layout, and bounds gates. The probe also
   observes structured SRV buffers refreshed through
   `UpdateSubresource`. With a reviewed native map and a fully verified target,
   the source is copied into a bounded scratch buffer and the solved arm

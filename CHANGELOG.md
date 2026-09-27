@@ -1,5 +1,13 @@
 # CatalystVR changelog
 
+## Unreleased — 1.5.1.25-alpha
+
+- Added guarded vertex-stage SRV binding evidence for Catalyst paths that
+  expose stable skinning palette binds without observable Draw or
+  ExecuteCommandList callbacks. Native promotion still requires a classified
+  stable resource, non-null vertex shader, multi-present freshness, and the
+  existing executable/map/layout/bounds gates.
+
 ## Unreleased — 1.5.1.24-alpha
 
 - Fixed native palette-to-draw correlation for deferred D3D11 contexts by

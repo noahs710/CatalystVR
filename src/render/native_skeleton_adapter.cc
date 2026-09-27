@@ -109,7 +109,8 @@ void NativePaletteTargetTracker::observePalette(
   state_.present_index = present_index;
   ++state_.palette_frames;
   state_.verified = state_.palette_frames >= stable_frames_ &&
-                    state_.draw_bound_frames >= stable_frames_;
+                    (state_.draw_bound_frames >= stable_frames_ ||
+                     state_.vertex_bound_frames >= stable_frames_);
 }
 
 void NativePaletteTargetTracker::noteDraw(
@@ -125,7 +126,25 @@ void NativePaletteTargetTracker::noteDraw(
   state_.pixel_shader = pixel_shader;
   ++state_.draw_bound_frames;
   state_.verified = state_.palette_frames >= stable_frames_ &&
-                    state_.draw_bound_frames >= stable_frames_;
+                    (state_.draw_bound_frames >= stable_frames_ ||
+                     state_.vertex_bound_frames >= stable_frames_);
+}
+
+void NativePaletteTargetTracker::noteVertexBinding(
+    std::uint32_t resource_id, std::uint64_t present_index,
+    std::uintptr_t vertex_shader, std::uintptr_t pixel_shader) {
+  if (resource_id == 0 || present_index == 0 || vertex_shader == 0 ||
+      state_.resource_id != resource_id || !candidate_.valid()) {
+    return;
+  }
+  if (present_index == last_draw_present_) return;
+  last_draw_present_ = present_index;
+  state_.vertex_shader = vertex_shader;
+  state_.pixel_shader = pixel_shader;
+  ++state_.vertex_bound_frames;
+  state_.verified = state_.palette_frames >= stable_frames_ &&
+                    (state_.draw_bound_frames >= stable_frames_ ||
+                     state_.vertex_bound_frames >= stable_frames_);
 }
 
 void NativePaletteTargetTracker::reset() {

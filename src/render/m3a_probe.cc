@@ -1309,23 +1309,29 @@ void NotePaletteDraw(ID3D11DeviceContext* self, UINT count, UINT start,
       reinterpret_cast<std::uintptr_t>(vertex_shader_obj);
   const std::uintptr_t pixel_shader =
       reinterpret_cast<std::uintptr_t>(pixel_shader_obj);
-  const auto note_srv = [&](ID3D11ShaderResourceView* srv) {
+  const auto note_srv = [&](ID3D11ShaderResourceView* srv, bool vertex_stage) {
     if (srv == nullptr) return;
     ID3D11Resource* resource = nullptr;
     srv->GetResource(&resource);
     if (resource != nullptr) {
       auto* record = PaletteRecordFor(resource, 0, 0);
       if (record != nullptr) {
-        g_native_palette_target.noteDraw(
-            record->id, g_present_idx, static_cast<std::uint64_t>(g_draw_idx),
-            vertex_shader, pixel_shader);
+        if (vertex_stage) {
+          g_native_palette_target.noteVertexBinding(
+              record->id, g_present_idx, vertex_shader, pixel_shader);
+        } else {
+          g_native_palette_target.noteDraw(
+              record->id, g_present_idx,
+              static_cast<std::uint64_t>(g_draw_idx), vertex_shader,
+              pixel_shader);
+        }
       }
       resource->Release();
     }
   };
   for (std::size_t i = 0; i < kTrackedSrvSlots; ++i) {
-    note_srv(vs_srvs[i]);
-    note_srv(ps_srvs[i]);
+    note_srv(vs_srvs[i], true);
+    note_srv(ps_srvs[i], false);
   }
   const LONG slot = InterlockedIncrement(&g_draw_correlation_count) - 1;
   if (slot >= 0 && slot < kMaxDrawCorrelationSamples) {

@@ -8,6 +8,7 @@ int main() {
   using mecvr::render::BoneMatrixLayout;
   using mecvr::render::BonePaletteCandidate;
   using mecvr::render::NativeSkeletonAdapter;
+  using mecvr::render::NativePaletteTargetTracker;
 
   std::array<unsigned char, 64 + 48 * 24> bytes{};
   for (std::size_t i = 0; i < 24; ++i) {
@@ -86,11 +87,24 @@ int main() {
   const auto target_state = target.snapshot();
   assert(target_state.verified);
   assert(target_state.draw_bound_frames == 3);
+  assert(target_state.vertex_bound_frames == 0);
   target.noteDraw(10, 4, 40, 0x33, 0x44);
   assert(target.snapshot().resource_id == 9);
   BonePaletteCandidate unrelated = candidate;
   unrelated.offset = 128;
   target.observePalette(10, unrelated, 4);
   assert(target.snapshot().verified);
+
+  NativePaletteTargetTracker binding_target(3);
+  for (std::uint64_t frame = 1; frame <= 3; ++frame) {
+    binding_target.observePalette(11, candidate, frame);
+    binding_target.noteVertexBinding(11, frame, 0x51, 0x61);
+  }
+  const auto binding_state = binding_target.snapshot();
+  assert(binding_state.verified);
+  assert(binding_state.vertex_bound_frames == 3);
+  assert(binding_state.draw_bound_frames == 0);
+  binding_target.noteVertexBinding(11, 4, 0, 0x61);
+  assert(binding_target.snapshot().vertex_bound_frames == 3);
   return 0;
 }
