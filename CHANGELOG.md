@@ -1,6 +1,9 @@
 # CatalystVR changelog
 
-## Unreleased — 1.5.1.11-alpha
+## Unreleased — 1.5.1.12-alpha
+
+- Extended the read-only compatibility scanner to flag common Catalyst
+  Frosty/DataPathFix plugin modules as advisory asset/launch conflicts.
 
 - Added a cited research note covering existing Catalyst camera, animation,
   Frostbite asset, and VR modding work, with reuse and licensing boundaries.

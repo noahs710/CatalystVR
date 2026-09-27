@@ -41,9 +41,12 @@ void UnitMatcherChecks() {
   add("C:\\Games\\MEC\\dxgi.dll", true);          // game-dir shim: flag.
   add("C:\\Windows\\System32\\dxgi.dll", false);  // system copy: skip.
   add("C:\\Games\\MEC\\dinput8.dll", true);       // game-dir shim: flag.
+  add("C:\\Games\\MEC\\DatapathFixPlugin.dll", true);
+  add("C:\\Games\\MEC\\FrostyPlugin.dll", true);
   const auto hits = MatchKnownModules(mods);
   bool reshade = false, rtss = false, sk = false, steam = false,
-       shim_dxgi = false, shim_dinput = false, sys_dxgi = false;
+       shim_dxgi = false, shim_dinput = false, datapath = false,
+       frosty = false, sys_dxgi = false;
   for (const auto& h : hits) {
     if (h.basename_lower == "reshade64.dll") reshade = true;
     if (h.basename_lower == "rtsshooks64.dll") rtss = true;
@@ -55,6 +58,8 @@ void UnitMatcherChecks() {
         h.path == "C:\\Windows\\System32\\dxgi.dll")
       sys_dxgi = true;
     if (h.basename_lower == "dinput8.dll") shim_dinput = true;
+    if (h.basename_lower == "datapathfixplugin.dll") datapath = true;
+    if (h.basename_lower == "frostyplugin.dll") frosty = true;
   }
   Check(reshade, "matcher flags reshade64.dll");
   Check(rtss, "matcher flags rtsshooks64.dll");
@@ -62,6 +67,8 @@ void UnitMatcherChecks() {
   Check(steam, "matcher flags gameoverlayrenderer64.dll");
   Check(shim_dxgi, "matcher flags game-dir dxgi.dll shim");
   Check(shim_dinput, "matcher flags game-dir dinput8.dll shim");
+  Check(datapath, "matcher flags DatapathFixPlugin.dll");
+  Check(frosty, "matcher flags FrostyPlugin.dll");
   Check(!sys_dxgi, "matcher ignores System32 dxgi.dll");
 }
 

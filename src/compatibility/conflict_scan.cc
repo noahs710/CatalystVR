@@ -206,6 +206,10 @@ std::vector<OverlayFinding> MatchKnownModules(
       // Discord overlay.
       {"discordhook64.dll", "overlay-discord"},
       {"discordhook.dll", "overlay-discord"},
+      // Catalyst asset-launcher/plugin shims. These can change load order or
+      // data-path behavior around Frosty-managed assets.
+      {"datapathfixplugin.dll", "frosty-datapath"},
+      {"frostyplugin.dll", "frosty-plugin"},
       // Generic shim names that are only suspicious from the game dir.
   };
   std::vector<OverlayFinding> out;
