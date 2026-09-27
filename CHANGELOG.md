@@ -1,6 +1,9 @@
 # CatalystVR changelog
 
-## Unreleased — 1.5.1.10-alpha
+## Unreleased — 1.5.1.11-alpha
+
+- Added a cited research note covering existing Catalyst camera, animation,
+  Frostbite asset, and VR modding work, with reuse and licensing boundaries.
 
 - Extended D3D11 native-palette draw correlation to instanced and indirect
   draw families, so skinned meshes are not discarded merely because they do
