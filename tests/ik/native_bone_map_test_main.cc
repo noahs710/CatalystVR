@@ -1,6 +1,8 @@
 #include "ik/native_bone_map.h"
+#include "ik/faith_skeleton_contract.h"
 
 #include <cassert>
+#include <cmath>
 #include <cstdio>
 #include <fstream>
 
@@ -9,6 +11,27 @@ int main() {
   using mecvr::ik::NativeBoneMap;
   using mecvr::render::BoneMatrixLayout;
   using mecvr::render::NativePaletteObservation;
+
+  const auto& faith = mecvr::ik::kFaithArmBones;
+  if (mecvr::ik::kFaithSkeletonBoneCount != 169 ||
+      faith[0].index != 8 || faith[1].parent != 8 ||
+      faith[2].parent != 9 || faith[3].parent != 12 ||
+      faith[4].index != 111 || faith[5].parent != 111 ||
+      faith[6].parent != 112 || faith[7].parent != 115) {
+    return 1;
+  }
+  const auto distance = [](const auto& a, const auto& b) {
+    const double x = a.model_position[0] - b.model_position[0];
+    const double y = a.model_position[1] - b.model_position[1];
+    const double z = a.model_position[2] - b.model_position[2];
+    return std::sqrt(x * x + y * y + z * z);
+  };
+  if (std::fabs(distance(faith[1], faith[2]) -
+                distance(faith[5], faith[6])) >= 1e-5 ||
+      std::fabs(distance(faith[2], faith[3]) -
+                distance(faith[6], faith[7])) >= 1e-5) {
+    return 1;
+  }
 
   NativePaletteObservation observation;
   observation.constant_buffer_id = 4;

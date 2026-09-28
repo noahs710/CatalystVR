@@ -1,5 +1,16 @@
 # CatalystVR changelog
 
+## Unreleased — 1.5.2.2-alpha
+
+- Added a read-only Catalyst SkeletonAsset extraction path and a narrow
+  self-describing EBX parser independent of Frosty's generated managed ABI.
+- Verified the retail female skeleton's 169-bone hierarchy, bind/model poses,
+  source SHA-256, and native arm chains at indices `8/9/12/15` and
+  `111/112/115/118`.
+- Added a compiled Faith arm identity/rest-pose contract with hierarchy and
+  mirrored-length tests. The indices do not bypass existing executable,
+  resource, layout, freshness, or bounds gates.
+
 ## Unreleased — 1.5.2.1-alpha
 
 - Replaced the mod-owned arm fallback's hand-tuned screen-space projection

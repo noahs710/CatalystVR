@@ -2,7 +2,7 @@
 param(
   [string]$BuildDir,
   [string]$OutputDir,
-  [string]$Version = '1.5.2.1-alpha'
+  [string]$Version = '1.5.2.2-alpha'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -73,7 +73,7 @@ $manifest = @(
   'Frosty: optional explicit backend launches a configured pack and injects only into a newly matched exact Catalyst executable.'
   'IK: deterministic 21-joint full-body procedural pose layer is included and headless-tested.'
   'Asset index: tools/index_catalyst_assets.ps1 performs a read-only Data/Patch character package scan.'
-  'Skeleton: resource-qualified read-only palette evidence is included; game-visible body writes remain disabled until a versioned Catalyst bone map and guarded writer are proven.'
+  'Skeleton: the retail 169-bone female hierarchy and arm indices are asset-hash verified; game-visible writes still require a matching live palette/layout signature.'
   'Tests: see ctest-release.txt; packaging stops on any failure.'
 )
 $manifest | Set-Content -LiteralPath (Join-Path $stageResolved 'MANIFEST.txt') -Encoding UTF8
