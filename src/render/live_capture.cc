@@ -20,6 +20,30 @@ std::int64_t NowNs() {
       .count();
 }
 
+MonoFramePtr MakeSquareFrame(const MonoFramePtr& source) {
+  if (source == nullptr || source->width == 0 || source->height == 0 ||
+      source->pixels_rgba.empty()) {
+    return nullptr;
+  }
+  const std::uint32_t side = (std::min)(source->width, source->height);
+  const std::uint32_t offset_x = (source->width - side) / 2;
+  const std::uint32_t offset_y = (source->height - side) / 2;
+  auto square = std::make_shared<MonoFrame>();
+  square->sequence = source->sequence;
+  square->capture_time_ns = source->capture_time_ns;
+  square->width = side;
+  square->height = side;
+  square->pixels_rgba.resize(static_cast<std::size_t>(side) * side * 4u);
+  for (std::uint32_t y = 0; y < side; ++y) {
+    const auto* src = source->pixels_rgba.data() +
+                      (static_cast<std::size_t>(y + offset_y) * source->width +
+                       offset_x) * 4u;
+    auto* dst = square->pixels_rgba.data() + static_cast<std::size_t>(y) * side * 4u;
+    std::memcpy(dst, src, static_cast<std::size_t>(side) * 4u);
+  }
+  return square;
+}
+
 // CPU readback is the dominant cost of the desktop-to-XR bridge. Catalyst
 // can present well above the headset cadence (especially on ultrawide
 // displays); reading every Present starves the game. One bounded capture per
@@ -632,7 +656,11 @@ void LiveCapture::captureStereo(IDXGISwapChain* swapchain, std::uint32_t eye,
       now - last_capture_ns_ < kMinCaptureIntervalNs / 2) {
     return;
   }
-  MonoFramePtr frame = copyFrame(swapchain, now);
+  // The XR projection path is square/near-square by contract. Crop the
+  // desktop backbuffer once at the transport boundary so the OpenXR eye
+  // texture is never a 16:9 desktop image that later gets zoomed into the
+  // headset's view rectangle.
+  MonoFramePtr frame = MakeSquareFrame(copyFrame(swapchain, now));
   if (frame == nullptr) return;
   if (mailbox_ != nullptr && mailbox_->depth() == 0) {
     mailbox_->tryPublish(frame);  // Mono remains the safe fallback.

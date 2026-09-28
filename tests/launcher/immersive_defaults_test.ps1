@@ -34,7 +34,7 @@ if (-not $script.Contains("[ValidateSet('balanced', 'performance', 'diagnostic')
 if (-not $script.Contains('$env:MECVR_PERFORMANCE_MODE = $effectivePerformanceMode')) {
   $failures.Add('performance profile must reach the runtime')
 }
-if (-not $launcher.Contains('ReadSetting(L"SettingsVersion", L"1") != L"2"')) {
+if (-not $launcher.Contains('ReadSetting(L"SettingsVersion", L"1") != L"3"')) {
   $failures.Add('legacy launcher settings must migrate away from theatre defaults')
 }
 if ($failures.Count -ne 0) {

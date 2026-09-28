@@ -140,6 +140,7 @@ constexpr std::size_t kMaxMatWindowsPerDump = 8;
 constexpr std::size_t kMaxPendingMaps = 8;
 constexpr std::size_t kTrackedSrvSlots = 16;
 constexpr std::size_t kPhaseRecheckPresents = 60;
+constexpr LONGLONG kMaxPaletteChangeLogs = 1024;
 
 // ---- Hook bookkeeping -----------------------------------------------------
 using PresentFn = HRESULT(STDMETHODCALLTYPE*)(IDXGISwapChain*, UINT, UINT);
@@ -438,10 +439,13 @@ struct PaletteResourceRecord {
   UINT layout = 0;
   UINT samples = 0;
   bool dumped = false;
+  std::uint64_t last_content_fingerprint = 0;
+  std::uint32_t content_changes = 0;
 };
 constexpr std::size_t kPaletteResourceTableSize = 256;
 PaletteResourceRecord g_palette_resources[kPaletteResourceTableSize];
 volatile LONGLONG g_noncb_map_samples = 0;
+volatile LONGLONG g_palette_change_logs = 0;
 
 PaletteResourceRecord* PaletteRecordFor(ID3D11Resource* res, UINT size,
                                         UINT bind_flags) {
@@ -604,6 +608,29 @@ void NoteNonCbPalette(ID3D11Resource* res, const PendingMap& pending) {
   PaletteResourceRecord* record =
       PaletteRecordFor(res, pending.size, pending.bind_flags);
   if (record == nullptr) return;
+  // Discovery runs against the live game and must distinguish animated
+  // palettes from static SRV-backed lookup/particle buffers. Hash only the
+  // bounded diagnostic resource window and log a small number of transitions
+  // per resource; this path is never enabled by normal performance launches.
+  if (g_palette_discovery_enabled && pending.size <= kMaxScanBytes) {
+    const std::uint64_t content_fingerprint =
+        HashWords64(pending.pdata, pending.size);
+    if (record->last_content_fingerprint == 0 ||
+        record->last_content_fingerprint != content_fingerprint) {
+      record->last_content_fingerprint = content_fingerprint;
+      ++record->content_changes;
+      const LONGLONG log_index =
+          InterlockedIncrement64(&g_palette_change_logs);
+      if (log_index <= kMaxPaletteChangeLogs && record->content_changes <= 8) {
+        LogF("m3a palette-change id=%u size=%u bind=%08x hash=%016llx "
+             "changes=%u present=%llu\n",
+             record->id, record->size, record->bind_flags,
+             static_cast<unsigned long long>(content_fingerprint),
+             record->content_changes,
+             static_cast<unsigned long long>(g_present_idx));
+      }
+    }
+  }
   const bool matrix_sized =
       pending.size <= 16384 &&
       (pending.size % 48 == 0 || pending.size % 64 == 0);
@@ -1780,15 +1807,31 @@ void STDMETHODCALLTYPE HookRSViewports(ID3D11DeviceContext* self, UINT count,
   RSViewportsFn orig = e != nullptr
                            ? reinterpret_cast<RSViewportsFn>(e->orig[kH_RSViewports])
                            : nullptr;
-  if (orig != nullptr) orig(self, count, vps);
+  const D3D11_VIEWPORT* applied = vps;
+  D3D11_VIEWPORT square_viewport{};
+#ifdef MECVR_M3B
+  const bool square_stereo =
+      g_stereo_enabled.load(std::memory_order_acquire) &&
+      g_stereo_eye_valid.load(std::memory_order_acquire) && count == 1 &&
+      vps != nullptr && vps[0].Width > vps[0].Height &&
+      vps[0].Height >= 256.0f;
+  if (square_stereo) {
+    square_viewport = vps[0];
+    square_viewport.TopLeftX +=
+        (square_viewport.Width - square_viewport.Height) * 0.5f;
+    square_viewport.Width = square_viewport.Height;
+    applied = &square_viewport;
+  }
+#endif
+  if (orig != nullptr) orig(self, count, applied);
   if (g_armed && vps != nullptr && count > 0) {
-    g_vp_w = vps[0].Width;
-    g_vp_h = vps[0].Height;
+    g_vp_w = applied != nullptr ? applied[0].Width : 0.0f;
+    g_vp_h = applied != nullptr ? applied[0].Height : 0.0f;
     g_vp_count = count;
 #ifdef MECVR_M3B
-    // Full-width desktop rendering is the normal Catalyst path. Temporal
-    // stereo owns eye selection there; a viewport classifier must not
-    // overwrite the eye between the two presents in a pair.
+    // Temporal stereo renders into a centered square viewport. The desktop
+    // swapchain remains unchanged; the transport crops the same square
+    // region, so the OpenXR eye image is never a stretched 16:9 surface.
 #endif
   }
   OvhdAdd(g_ovh_rs, QpcNow() - t0);
@@ -2631,7 +2674,6 @@ HRESULT STDMETHODCALLTYPE HookPresent(IDXGISwapChain* self, UINT sync,
   if (ctx != nullptr) ctx->OMGetRenderTargets(1, &check_rtv, &check_dsv);
 #ifdef MECVR_M3B
   const bool temporal_stereo =
-      !g_preserve_runtime_pacing &&
       g_stereo_enabled.load(std::memory_order_acquire) &&
       g_stereo_eye_valid.load(std::memory_order_acquire) &&
       g_stereo_pair_epoch.load(std::memory_order_acquire) != 0 &&

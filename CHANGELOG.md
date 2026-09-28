@@ -1,5 +1,23 @@
 # CatalystVR changelog
 
+## Unreleased — 1.5.2.6-alpha
+
+### Stereo transport and launcher clarity
+
+- Give explicit stereo priority over the mono shared-GPU fast path so the two captured eyes cannot be silently replaced by one image.
+- Preserve the complete Catalyst source image when uploading to each runtime eye texture instead of center-cropping into a zoomed view.
+- Make temporal stereo mandatory whenever stereo is enabled, including performance-mode launches, so eye pairs are actually produced.
+- Reworked the launcher into a wider, non-overlapping layout with grouped runtime, backend, motion, and native-contract sections.
+- Render temporal stereo through a centered square viewport and transport a square eye frame, keeping the desktop swapchain as an internal source only.
+
+## Unreleased — 1.5.2.4-alpha
+
+### Live palette diagnostics
+
+- Diagnostic palette discovery now records bounded content-fingerprint
+  transitions per SRV-backed resource, distinguishing animated buffers from
+  static lookup data before any native IK contract is authored.
+
 ## Unreleased — 1.5.2.3-alpha
 
 ### Faith palette geometry gate

@@ -141,7 +141,7 @@ std::wstring Quote(const std::wstring& value) {
 }
 
 void SaveSettings() {
-  WriteSetting(L"SettingsVersion", L"2");
+  WriteSetting(L"SettingsVersion", L"3");
   WriteSetting(L"GamePath", Text(g_game_path));
   WriteSetting(L"Camera", Checked(g_camera) ? L"1" : L"0");
   WriteSetting(L"Input", Checked(g_input) ? L"1" : L"0");
@@ -171,7 +171,7 @@ void SaveSettings() {
 
 void LoadSettings() {
   const bool migrate_legacy_defaults =
-      ReadSetting(L"SettingsVersion", L"1") != L"2";
+      ReadSetting(L"SettingsVersion", L"1") != L"3";
   SetWindowTextW(g_game_path, ReadSetting(L"GamePath", L"").c_str());
   SendMessageW(g_camera, BM_SETCHECK,
                ReadSetting(L"Camera", L"1") == L"1" ? BST_CHECKED
@@ -185,8 +185,10 @@ void LoadSettings() {
   // respected when explicitly saved; a missing/legacy value opts into the
   // same stereo-first behavior as launch_preview.ps1.
   SendMessageW(g_stereo, BM_SETCHECK,
-               ReadSetting(L"Stereo", L"1") == L"1" ? BST_CHECKED
-                                                    : BST_UNCHECKED,
+               (migrate_legacy_defaults ||
+                ReadSetting(L"Stereo", L"1") == L"1")
+                   ? BST_CHECKED
+                   : BST_UNCHECKED,
                0);
   SelectCombo(g_turn, ReadSetting(L"Turn", L"smooth"));
   SetWindowTextW(g_units, ReadSetting(L"Units", L"100").c_str());
@@ -451,27 +453,27 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam,
                            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
                            CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
                            DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
-      Label(window, L"MECVR", 28, 24, 180, 34);
+      Label(window, L"MECVR", 40, 24, 240, 34);
       Label(window, L"Mirror's Edge Catalyst // VR control center", 30, 58,
-            430, 24);
-      Label(window, L"GAME EXECUTABLE", 30, 104, 160, 22);
+            700, 24);
+      Label(window, L"GAME EXECUTABLE", 40, 104, 220, 22);
       g_game_path = CreateWindowW(L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_BORDER,
-                                  30, 128, 430, 30, window,
+                                  40, 128, 700, 30, window,
                                   reinterpret_cast<HMENU>(kGamePath),
                                   GetModuleHandleW(nullptr), nullptr);
       ApplyFont(g_game_path);
-      Button(window, L"Browse", kBrowse, 470, 128, 90, 30);
-      Label(window, L"RUNTIME", 30, 184, 160, 22);
-      g_camera = Button(window, L"6DoF camera", kCamera, 30, 210, 160, 30,
+      Button(window, L"Browse", kBrowse, 755, 128, 110, 30);
+      Label(window, L"RUNTIME", 40, 184, 220, 22);
+      g_camera = Button(window, L"6DoF camera", kCamera, 40, 210, 180, 30,
                         BS_AUTOCHECKBOX);
-      g_input = Button(window, L"STRIDE motion + input", kInput, 200, 210, 210,
+      g_input = Button(window, L"STRIDE motion + input", kInput, 240, 210, 250,
                        30, BS_AUTOCHECKBOX);
-      g_stereo = Button(window, L"Temporal stereo (experimental; opt-in)", kStereo,
-                        30, 250, 280, 30, BS_AUTOCHECKBOX);
-      Label(window, L"Mode", 340, 214, 42, 22);
+      g_stereo = Button(window, L"Stereo projection", kStereo,
+                        40, 250, 220, 30, BS_AUTOCHECKBOX);
+      Label(window, L"Mode", 520, 214, 60, 22);
       g_mode = CreateWindowW(L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE |
                                                    CBS_DROPDOWNLIST,
-                             385, 210, 120, 200, window,
+                             590, 210, 150, 200, window,
                              reinterpret_cast<HMENU>(kMode),
                              GetModuleHandleW(nullptr), nullptr);
       SendMessageW(g_mode, CB_ADDSTRING, 0,
@@ -479,18 +481,18 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam,
       SendMessageW(g_mode, CB_ADDSTRING, 0,
                    reinterpret_cast<LPARAM>(L"mono"));
       ApplyFont(g_mode);
-      Label(window, L"Turn", 340, 254, 42, 22);
+      Label(window, L"Turn", 520, 254, 60, 22);
       g_turn = CreateWindowW(L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST,
-                             385, 250, 120, 200, window,
+                             590, 250, 150, 200, window,
                              reinterpret_cast<HMENU>(kTurn),
                              GetModuleHandleW(nullptr), nullptr);
       SendMessageW(g_turn, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"smooth"));
       SendMessageW(g_turn, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"snap"));
       ApplyFont(g_turn);
-      Label(window, L"Performance", 270, 344, 100, 22);
+      Label(window, L"Performance", 520, 294, 100, 22);
       g_performance = CreateWindowW(L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE |
                                                    CBS_DROPDOWNLIST,
-                                    375, 340, 135, 200, window,
+                                    620, 290, 120, 200, window,
                                     reinterpret_cast<HMENU>(kPerformance),
                                     GetModuleHandleW(nullptr), nullptr);
       SendMessageW(g_performance, CB_ADDSTRING, 0,
@@ -500,68 +502,50 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam,
       SendMessageW(g_performance, CB_ADDSTRING, 0,
                    reinterpret_cast<LPARAM>(L"diagnostic"));
       ApplyFont(g_performance);
-      Label(window, L"Units per meter", 30, 300, 120, 22);
+      Label(window, L"Units per meter", 40, 294, 120, 22);
       g_units = CreateWindowW(L"EDIT", L"100", WS_CHILD | WS_VISIBLE | WS_BORDER,
-                              150, 296, 80, 30, window,
+                              180, 290, 100, 30, window,
                               reinterpret_cast<HMENU>(kUnits),
                               GetModuleHandleW(nullptr), nullptr);
       ApplyFont(g_units);
-      Label(window, L"Presentation", 270, 300, 100, 22);
+      Label(window, L"Presentation", 40, 334, 120, 22);
       g_layer = CreateWindowW(L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST,
-                              375, 296, 135, 200, window,
+                              180, 330, 180, 200, window,
                               reinterpret_cast<HMENU>(kLayer),
                               GetModuleHandleW(nullptr), nullptr);
       SendMessageW(g_layer, CB_ADDSTRING, 0,
                    reinterpret_cast<LPARAM>(L"projection"));
       SendMessageW(g_layer, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"quad"));
       ApplyFont(g_layer);
-      Label(window, L"Quad space", 30, 378, 120, 22);
+      Label(window, L"Quad space", 520, 334, 90, 22);
       g_space = CreateWindowW(L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST,
-                              150, 374, 120, 200, window,
+                              620, 330, 120, 200, window,
                               reinterpret_cast<HMENU>(kSpace),
                               GetModuleHandleW(nullptr), nullptr);
       SendMessageW(g_space, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"view"));
       SendMessageW(g_space, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"local"));
       ApplyFont(g_space);
       g_discover = Button(window, L"Developer palette diagnostics (slow)",
-                          kDiscover, 300, 374, 250, 30, BS_AUTOCHECKBOX);
+                          kDiscover, 520, 370, 330, 30, BS_AUTOCHECKBOX);
       g_body_overlay = Button(window, L"Mod-owned IK arms/body",
-                              kBodyOverlay, 30, 382, 250, 30, BS_AUTOCHECKBOX);
+                              kBodyOverlay, 40, 374, 250, 30, BS_AUTOCHECKBOX);
       g_physical_jump = Button(window, L"Physical jump",
-                               kPhysicalJump, 300, 382, 120, 30,
+                               kPhysicalJump, 310, 374, 150, 30,
                                BS_AUTOCHECKBOX);
       g_physical_crouch = Button(window, L"Physical crouch input",
-                               kPhysicalCrouch, 430, 382, 145, 30,
+                               kPhysicalCrouch, 480, 374, 190, 30,
                                BS_AUTOCHECKBOX);
       g_parkour_input = Button(window, L"Parkour gameplay bridge",
-                               kParkourInput, 30, 410, 250, 30,
+                               kParkourInput, 40, 414, 250, 30,
                                BS_AUTOCHECKBOX);
-      Label(window, L"Parkour scan codes", 30, 615, 135, 22);
-      g_parkour_vault_scan = CreateWindowW(
-          L"EDIT", L"57", WS_CHILD | WS_VISIBLE | WS_BORDER, 170, 611, 65,
-          26, window, reinterpret_cast<HMENU>(kParkourVaultScan),
-          GetModuleHandleW(nullptr), nullptr);
-      g_parkour_climb_scan = CreateWindowW(
-          L"EDIT", L"18", WS_CHILD | WS_VISIBLE | WS_BORDER, 300, 611, 65,
-          26, window, reinterpret_cast<HMENU>(kParkourClimbScan),
-          GetModuleHandleW(nullptr), nullptr);
-      g_parkour_slide_scan = CreateWindowW(
-          L"EDIT", L"29", WS_CHILD | WS_VISIBLE | WS_BORDER, 430, 611, 65,
-          26, window, reinterpret_cast<HMENU>(kParkourSlideScan),
-          GetModuleHandleW(nullptr), nullptr);
-      ApplyFont(g_parkour_vault_scan);
-      ApplyFont(g_parkour_climb_scan);
-      ApplyFont(g_parkour_slide_scan);
-      Label(window, L"vault", 170, 638, 65, 18);
-      Label(window, L"climb", 300, 638, 65, 18);
-      Label(window, L"slide", 430, 638, 65, 18);
       g_runtime_pacing = Button(
-          window, L"Preserve runtime pacing / AFR", kRuntimePacing, 300, 410,
-          250, 30, BS_AUTOCHECKBOX);
-      Label(window, L"Backend", 30, 430, 90, 22);
+          window, L"Preserve runtime pacing / AFR", kRuntimePacing, 310, 414,
+          300, 30, BS_AUTOCHECKBOX);
+      Label(window, L"BACKEND AND ADVANCED", 40, 458, 280, 22);
+      Label(window, L"Backend", 40, 490, 90, 22);
       g_backend = CreateWindowW(L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE |
                                                    CBS_DROPDOWNLIST,
-                                120, 426, 140, 200, window,
+                                140, 486, 150, 200, window,
                                 reinterpret_cast<HMENU>(kBackend),
                                 GetModuleHandleW(nullptr), nullptr);
       SendMessageW(g_backend, CB_ADDSTRING, 0,
@@ -569,58 +553,77 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam,
       SendMessageW(g_backend, CB_ADDSTRING, 0,
                    reinterpret_cast<LPARAM>(L"frosty"));
       ApplyFont(g_backend);
-      Label(window, L"Frosty executable", 280, 430, 125, 22);
+      Label(window, L"Frosty executable", 330, 490, 130, 22);
       g_frosty_path = CreateWindowW(L"EDIT", L"",
                                     WS_CHILD | WS_VISIBLE | WS_BORDER,
-                                    405, 426, 135, 30, window,
+                                    465, 486, 300, 30, window,
                                     reinterpret_cast<HMENU>(kFrostyPath),
                                     GetModuleHandleW(nullptr), nullptr);
       ApplyFont(g_frosty_path);
-      Button(window, L"Browse", kFrostyBrowse, 470, 462, 70, 28);
-      Label(window, L"Frosty pack", 30, 470, 90, 22);
+      Button(window, L"Browse", kFrostyBrowse, 780, 486, 85, 30);
+      Label(window, L"Frosty pack", 40, 530, 90, 22);
       g_frosty_pack = CreateWindowW(L"EDIT", L"",
                                     WS_CHILD | WS_VISIBLE | WS_BORDER,
-                                    120, 466, 330, 30, window,
+                                    140, 526, 625, 30, window,
                                     reinterpret_cast<HMENU>(kFrostyPack),
                                     GetModuleHandleW(nullptr), nullptr);
       ApplyFont(g_frosty_pack);
-      Label(window, L"Frosty is opt-in; MECVR never edits ModData or game files.",
-            30, 505, 510, 22);
-      Label(window, L"Record solved motion clip (optional path)", 30, 540, 260, 22);
+
+      Label(window, L"MOTION CLIPS AND INPUT", 40, 574, 280, 22);
+      Label(window, L"Record solved motion clip", 40, 606, 240, 22);
       g_motion_clip = CreateWindowW(L"EDIT", L"",
                                     WS_CHILD | WS_VISIBLE | WS_BORDER,
-                                    295, 536, 200, 30, window,
+                                    280, 602, 485, 30, window,
                                     reinterpret_cast<HMENU>(kMotionClip),
                                     GetModuleHandleW(nullptr), nullptr);
       ApplyFont(g_motion_clip);
-      Button(window, L"Browse", kMotionClipBrowse, 500, 536, 70, 30);
-      Label(window, L"Play solved motion clip (optional path)", 30, 580, 260, 22);
+      Button(window, L"Browse", kMotionClipBrowse, 780, 602, 85, 30);
+      Label(window, L"Play solved motion clip", 40, 646, 240, 22);
       g_motion_playback = CreateWindowW(L"EDIT", L"",
                                         WS_CHILD | WS_VISIBLE | WS_BORDER,
-                                        295, 576, 200, 30, window,
+                                        280, 642, 485, 30, window,
                                         reinterpret_cast<HMENU>(kMotionPlayback),
                                         GetModuleHandleW(nullptr), nullptr);
       ApplyFont(g_motion_playback);
-      Button(window, L"Browse", kMotionPlaybackBrowse, 500, 576, 70, 30);
-      Label(window, L"Playback loops; live head/camera tracking remains active.",
-            30, 665, 510, 22);
-      Label(window, L"Native Faith bone contract (optional, verified builds only)",
-            30, 705, 350, 22);
-      g_native_bone_map = CreateWindowW(
-          L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_BORDER, 30, 730, 465, 30,
-          window, reinterpret_cast<HMENU>(kNativeBoneMap),
+      Button(window, L"Browse", kMotionPlaybackBrowse, 780, 642, 85, 30);
+      Label(window, L"Parkour scan codes", 40, 690, 135, 22);
+      g_parkour_vault_scan = CreateWindowW(
+          L"EDIT", L"57", WS_CHILD | WS_VISIBLE | WS_BORDER, 180, 686, 65,
+          26, window, reinterpret_cast<HMENU>(kParkourVaultScan),
           GetModuleHandleW(nullptr), nullptr);
-      ApplyFont(g_native_bone_map);
-      Label(window, L"Leave empty unless the exact executable/palette contract is verified.",
-            30, 765, 510, 22);
-      Button(window, L"LAUNCH VR", kLaunch, 30, 800, 170, 42, BS_DEFPUSHBUTTON);
-      Button(window, L"Dry run", kDryRun, 210, 800, 120, 42);
-      Button(window, L"Save", kSave, 340, 800, 100, 42);
-      Label(window, L"STATUS", 30, 870, 160, 22);
-      g_status = CreateWindowW(L"EDIT", L"Ready. HMD is not required for Dry run.",
-                               WS_CHILD | WS_VISIBLE | WS_BORDER | ES_MULTILINE |
-                                   ES_READONLY | WS_VSCROLL,
-                               30, 896, 530, 130, window,
+      g_parkour_climb_scan = CreateWindowW(
+          L"EDIT", L"18", WS_CHILD | WS_VISIBLE | WS_BORDER, 320, 686, 65,
+          26, window, reinterpret_cast<HMENU>(kParkourClimbScan),
+          GetModuleHandleW(nullptr), nullptr);
+      g_parkour_slide_scan = CreateWindowW(
+          L"EDIT", L"29", WS_CHILD | WS_VISIBLE | WS_BORDER, 460, 686, 65,
+          26, window, reinterpret_cast<HMENU>(kParkourSlideScan),
+          GetModuleHandleW(nullptr), nullptr);
+      ApplyFont(g_parkour_vault_scan);
+      ApplyFont(g_parkour_climb_scan);
+      ApplyFont(g_parkour_slide_scan);
+      Label(window, L"vault", 180, 714, 65, 18);
+      Label(window, L"climb", 320, 714, 65, 18);
+      Label(window, L"slide", 460, 714, 65, 18);
+      Label(window, L"Playback loops; live head/camera tracking remains active.",
+            560, 690, 300, 22);
+      Label(window, L"NATIVE FAITH BONE CONTRACT (OPTIONAL)",
+            40, 746, 400, 22);
+       g_native_bone_map = CreateWindowW(
+           L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_BORDER, 40, 774, 725, 30,
+           window, reinterpret_cast<HMENU>(kNativeBoneMap),
+           GetModuleHandleW(nullptr), nullptr);
+       ApplyFont(g_native_bone_map);
+       Label(window, L"Leave empty unless the exact executable/palette contract is verified.",
+             40, 810, 700, 22);
+       Button(window, L"LAUNCH VR", kLaunch, 40, 850, 190, 42, BS_DEFPUSHBUTTON);
+       Button(window, L"Dry run", kDryRun, 245, 850, 130, 42);
+       Button(window, L"Save", kSave, 390, 850, 110, 42);
+       Label(window, L"STATUS", 40, 900, 160, 22);
+       g_status = CreateWindowW(L"EDIT", L"Ready. HMD is not required for Dry run.",
+                                WS_CHILD | WS_VISIBLE | WS_BORDER | ES_MULTILINE |
+                                    ES_READONLY | WS_VSCROLL,
+                                40, 925, 825, 55, window,
                                reinterpret_cast<HMENU>(kStatus),
                                GetModuleHandleW(nullptr), nullptr);
       ApplyFont(g_status);
@@ -689,7 +692,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
   HWND window = CreateWindowExW(0, klass.lpszClassName,
                                L"MECVR // Catalyst VR", WS_OVERLAPPED |
                                    WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
-                               CW_USEDEFAULT, CW_USEDEFAULT, 610, 1060, nullptr,
+                                CW_USEDEFAULT, CW_USEDEFAULT, 920, 1020, nullptr,
                                nullptr, instance, nullptr);
   ShowWindow(window, show);
   UpdateWindow(window);

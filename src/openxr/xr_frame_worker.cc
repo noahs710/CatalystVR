@@ -83,7 +83,11 @@ bool XrFrameWorker::pumpOnce() {
   if (observer_) observer_(timing, views);
 
   ++stats_.xr_frames;
-  if (shared_mailbox_ != nullptr && registration_provider_) {
+  // Explicit stereo owns the eye images. The shared GPU transport is a
+  // mono-frame optimization and submitting it first would silently replace
+  // the two per-eye captures with the same image in both eyes.
+  if (stereo_mailbox_ == nullptr && shared_mailbox_ != nullptr &&
+      registration_provider_) {
     render::SharedCaptureRegistration registration;
     if (registration_provider_(&registration) &&
         registration.generation != shared_generation_) {

@@ -1762,41 +1762,45 @@ bool RealOpenXRBackend::uploadEyeImage(std::uint32_t view_index,
     n.staging_w[view_index] = dst_w;
     n.staging_h[view_index] = dst_h;
   }
-  // Immersive projection must cover the runtime's complete eye image. Preserve
-  // source aspect by center-cropping the desktop image to the eye aspect; a
-  // contain/letterbox fit recreates a theatre panel inside a projection layer.
+  // Preserve every source pixel. A 16:9 Catalyst backbuffer is commonly
+  // narrower than a Quest eye texture; center-cropping it makes the scene
+  // visibly zoomed and throws away the lateral world. The projection layer
+  // remains immersive and the runtime owns the final lens warp.
   const double scale_x =
       static_cast<double>(dst_w) / static_cast<double>(width);
   const double scale_y =
       static_cast<double>(dst_h) / static_cast<double>(height);
-  const double scale = scale_x > scale_y ? scale_x : scale_y;
-  const double visible_w = static_cast<double>(dst_w) / scale;
-  const double visible_h = static_cast<double>(dst_h) / scale;
-  const double source_x =
-      (static_cast<double>(width) - visible_w) * 0.5;
-  const double source_y =
-      (static_cast<double>(height) - visible_h) * 0.5;
+  const double scale = scale_x < scale_y ? scale_x : scale_y;
+  const double placed_w = static_cast<double>(width) * scale;
+  const double placed_h = static_cast<double>(height) * scale;
+  const std::uint32_t offset_x = static_cast<std::uint32_t>(
+      (static_cast<double>(dst_w) - placed_w) * 0.5);
+  const std::uint32_t offset_y = static_cast<std::uint32_t>(
+      (static_cast<double>(dst_h) - placed_h) * 0.5);
+  const std::uint32_t placed_width = static_cast<std::uint32_t>(placed_w);
+  const std::uint32_t placed_height = static_cast<std::uint32_t>(placed_h);
   D3D11_MAPPED_SUBRESOURCE mapped{};
   if (FAILED(n.context->Map(n.staging[view_index], 0, D3D11_MAP_WRITE_DISCARD,
                             0, &mapped))) {
     return false;
   }
   // Nearest sampling keeps this fallback bounded. The final direct-GPU path
-  // will replace this CPU upload; until then, avoiding four-tap bilinear work
-  // is important at the runtime-selected Quest eye extent.
+  // will replace this CPU upload; until then, avoid four-tap bilinear work at
+  // the runtime-selected Quest eye extent. Clear the unused letterbox area so
+  // no previous swapchain contents leak into the eye image.
   auto* dst = static_cast<std::uint8_t*>(mapped.pData);
+  std::memset(dst, 0, static_cast<std::size_t>(mapped.RowPitch) * dst_h);
   for (std::uint32_t y = 0; y < dst_h; ++y) {
-    std::uint32_t sy = static_cast<std::uint32_t>(
-        source_y + (static_cast<double>(y) + 0.5) / scale);
-    if (sy >= height) sy = height - 1;
+    if (y < offset_y || y >= offset_y + placed_height) continue;
+    const std::uint32_t sy = static_cast<std::uint32_t>(
+        (static_cast<double>(y - offset_y) + 0.5) / scale);
     std::uint8_t* row =
         dst + static_cast<std::size_t>(y) * mapped.RowPitch;
     const std::uint8_t* source_row =
         rgba + static_cast<std::size_t>(sy) * width * 4;
-    for (std::uint32_t x = 0; x < dst_w; ++x) {
+    for (std::uint32_t x = offset_x; x < offset_x + placed_width; ++x) {
       std::uint32_t sx = static_cast<std::uint32_t>(
-          source_x + (static_cast<double>(x) + 0.5) / scale);
-      if (sx >= width) sx = width - 1;
+          (static_cast<double>(x - offset_x) + 0.5) / scale);
       std::memcpy(row + static_cast<std::size_t>(x) * 4,
                   source_row + static_cast<std::size_t>(sx) * 4, 4);
     }
