@@ -10,6 +10,7 @@
 #include "camera/harness.h"
 #include "camera/hierarchy.h"
 #include "camera/math.h"
+#include "camera/pose_mailbox.h"
 #include "camera/seam_convert.h"
 #include "camera/snapshot.h"
 
@@ -41,6 +42,7 @@ using mecvr::camera::Mat4;
 using mecvr::camera::MatInvertRigid;
 using mecvr::camera::MatToQuat;
 using mecvr::camera::ProjectionConvention;
+using mecvr::camera::PoseMailbox;
 using mecvr::camera::Quat;
 using mecvr::camera::QuatNormalize;
 using mecvr::camera::QuatYaw;
@@ -73,6 +75,25 @@ bool QuatNear(Quat a, Quat b, double tol = 1e-6) {
 Vec3 EyeWorldPos(const Mat4& view) {
   const Mat4 w = MatInvertRigid(view);
   return Vec3{w.m[3], w.m[7], w.m[11]};
+}
+
+double ProjectNdcX(const Mat4& view, const Mat4& projection, Vec3 world) {
+  // The Catalyst seam uses row-major storage with column-vector
+  // multiplication. Keep this helper deliberately independent from the
+  // production projection code so the test catches a shared-sign mistake.
+  const double vx = view.m[0] * world.x + view.m[1] * world.y +
+                    view.m[2] * world.z + view.m[3];
+  const double vy = view.m[4] * world.x + view.m[5] * world.y +
+                    view.m[6] * world.z + view.m[7];
+  const double vz = view.m[8] * world.x + view.m[9] * world.y +
+                    view.m[10] * world.z + view.m[11];
+  const double vw = view.m[12] * world.x + view.m[13] * world.y +
+                    view.m[14] * world.z + view.m[15];
+  const double clip_x = projection.m[0] * vx + projection.m[1] * vy +
+                        projection.m[2] * vz + projection.m[3] * vw;
+  const double clip_w = projection.m[12] * vx + projection.m[13] * vy +
+                        projection.m[14] * vz + projection.m[15] * vw;
+  return clip_x / clip_w;
 }
 
 XrFovf Sym90() {
@@ -142,6 +163,61 @@ void TestStaticEyes() {
     if (!Near(pair.eyes[0].projection.m[i], direct.m[i], 1e-12)) same = false;
   }
   Check(same, "harness projection == direct builder");
+}
+
+void TestStereoConvergence() {
+  // A world point straight ahead must land at the same normalized horizontal
+  // coordinate in both eyes. This exercises the actual eye view plus each
+  // eye's asymmetric frustum; checking only IPD or only symmetric FOVs would
+  // allow parallel, non-converging stereo to pass.
+  HarnessKeyframe key;
+  key.time_ns = 1000000;
+  key.hmd_head.orientation = ToSeamQuat(Quat{0, 0, 0, 1});
+  key.hmd_head.position = ToSeamVec(Vec3{0.0, 1.6, 0.0});
+  const BodyAnchor anchor =
+      CaptureAnchor(Quat{0, 0, 0, 1}, Vec3{0.0, 1.6, 0.0},
+                    Quat{0, 0, 0, 1}, 1u);
+  WorldConvention world;
+  ProjectionConvention proj;
+  XRFramePoseSnapshot snap =
+      MakeHarnessSnapshot(key, 1u, 0.032, Sym90(), 1u);
+  // At a 3 m target, the left eye needs a slight inward optical-axis shift
+  // and the right eye the mirrored shift. These are representative of real
+  // HMD per-eye FOVs and make the convergence assertion geometric.
+  snap.views[0].fov.angle_left = static_cast<float>(std::atan(-1.0));
+  snap.views[0].fov.angle_right = static_cast<float>(std::atan(1.021333333));
+  snap.views[1].fov.angle_left = static_cast<float>(std::atan(-1.021333333));
+  snap.views[1].fov.angle_right = static_cast<float>(std::atan(1.0));
+  const HarnessEyePair pair = RunHarnessFrame(
+      key, anchor, world, proj, 0.1, 100.0, snap, key.time_ns, 100000000);
+  const Vec3 target{0.0, 1.6, -3.0};
+  const double left_x =
+      ProjectNdcX(pair.eyes[0].view, pair.eyes[0].projection, target);
+  const double right_x =
+      ProjectNdcX(pair.eyes[1].view, pair.eyes[1].projection, target);
+  Check(Near(left_x, right_x, 1e-5),
+        "stereo target converges to one horizontal coordinate");
+  Check(Near(left_x, 0.0, 1e-5) && Near(right_x, 0.0, 1e-5),
+        "stereo target is centered in both eyes");
+}
+
+void TestStereoPosePinning() {
+  PoseMailbox mailbox;
+  HarnessKeyframe first;
+  first.time_ns = 1000000;
+  first.hmd_head.orientation = ToSeamQuat(Quat{0, 0, 0, 1});
+  first.hmd_head.position = ToSeamVec(Vec3{0.0, 1.6, 0.0});
+  const HarnessKeyframe second = first;
+  const XRFramePoseSnapshot first_snapshot =
+      MakeHarnessSnapshot(first, 41u, 0.032, Sym90(), 1u);
+  mailbox.publish(first_snapshot);
+  mailbox.publish(MakeHarnessSnapshot(second, 42u, 0.032, Sym90(), 1u));
+  XRFramePoseSnapshot pinned;
+  Check(mailbox.find(41u, &pinned) && pinned.sequence == 41u,
+        "stereo pair resolves its stamped pose");
+  Check(mailbox.latest(&pinned) && pinned.sequence == 42u,
+        "pose mailbox latest remains current");
+  Check(!mailbox.find(7u, &pinned), "unknown stereo pose is rejected");
 }
 
 void TestYawTrajectory() {
@@ -295,6 +371,8 @@ void TestTrajectoryAndHierarchy() {
 int main() {
   TestSnapshotBuilder();
   TestStaticEyes();
+  TestStereoConvergence();
+  TestStereoPosePinning();
   TestYawTrajectory();
   TestFaithTurnsAndLean();
   TestGracefulFail();

@@ -35,7 +35,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 if ([string]::IsNullOrWhiteSpace($PackageRoot)) {
-  $PackageRoot = Join-Path $PSScriptRoot '..\dist\MECVR-1.5.2.10-alpha'
+  $PackageRoot = Join-Path $PSScriptRoot '..\dist\MECVR-1.5.2.11-alpha'
 }
 $root = (Resolve-Path $PackageRoot).Path
 $bin = Join-Path $root 'bin'
@@ -65,9 +65,10 @@ $env:MECVR_ENABLE_INPUT = if ($EnableInput) { '1' } else { '0' }
 # consecutive game presents with an explicit epoch/pose gate; -DisableStereo
 # remains available as a performance diagnostic and mono fallback.
 $env:MECVR_ENABLE_STEREO = if ($DisableStereo) { '0' } else { '1' }
-# Mod-owned IK arms/body are the public default; retain an explicit low-cost
-# fallback for diagnostics and weak GPUs.
-$env:MECVR_ENABLE_BODY_OVERLAY = if ($DisableBodyOverlay) { '0' } else { '1' }
+# The debug skeleton is intentionally opt-in: it is a diagnostic overlay, not
+# part of the immersive render path, and its extra immediate-context draw is
+# measurable on the performance profile. Enable it only when inspecting IK.
+$env:MECVR_ENABLE_BODY_OVERLAY = if ($DisableBodyOverlay) { '0' } elseif ($EnableBodyOverlay) { '1' } else { '0' }
 $env:MECVR_ENABLE_PHYSICAL_JUMP = if ($DisablePhysicalJump) { '0' } else { '1' }
 $env:MECVR_ENABLE_PHYSICAL_CROUCH_INPUT =
   if ($DisablePhysicalCrouchInput) { '0' } else { '1' }

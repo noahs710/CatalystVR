@@ -1,5 +1,26 @@
 # CatalystVR changelog
 
+## 1.5.2.11-alpha — 2026-09-28
+
+### Stereo convergence and performance correction
+
+- Pinned both temporal-stereo eye renders to the exact XR pose sequence that
+  opened the pair. The right eye no longer races ahead to a newer head pose,
+  preventing motion-dependent eye separation and failed fusion.
+- Added a bounded eight-sample pose history and deterministic lookup tests for
+  pair-stamped camera samples; unknown samples fail closed.
+- Added a geometric two-eye convergence test using asymmetric per-eye FOVs,
+  including the real view matrices and frustum projection path.
+- Made the diagnostic IK skeleton overlay opt-in in both launch paths. The
+  performance profile no longer pays for a debug immediate-context draw or
+  submits the overlay into captured eye images unless explicitly requested.
+
+### Verification
+
+- Release camera harness: passed, including convergence and pose pinning.
+- Release M3B DLL build: passed.
+- Full release/package validation follows this grouped fix.
+
 ## 1.5.2.10-alpha — 2026-09-28
 
 ### Stereo projection milestone

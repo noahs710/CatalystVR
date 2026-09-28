@@ -210,7 +210,7 @@ void LoadSettings() {
                    : BST_UNCHECKED,
                0);
   SendMessageW(g_body_overlay, BM_SETCHECK,
-               ReadSetting(L"BodyOverlay", L"1") == L"1" ? BST_CHECKED
+               ReadSetting(L"BodyOverlay", L"0") == L"1" ? BST_CHECKED
                                                              : BST_UNCHECKED,
                 0);
   SendMessageW(g_physical_jump, BM_SETCHECK,

@@ -1899,7 +1899,16 @@ bool TryApplyCameraOverride(CbRecord* rec, void* data, std::size_t bytes,
     return false;
   }
   mecvr::camera::XRFramePoseSnapshot snapshot;
-  if (!g_pose_mailbox.latest(&snapshot) ||
+  const bool stereo_requested =
+      g_stereo_enabled.load(std::memory_order_acquire) &&
+      g_stereo_eye_valid.load(std::memory_order_acquire);
+  const std::uint64_t pair_pose_sequence =
+      g_stereo_pair_pose.load(std::memory_order_acquire);
+  const bool pose_found =
+      stereo_requested && pair_pose_sequence != 0
+          ? g_pose_mailbox.find(pair_pose_sequence, &snapshot)
+          : g_pose_mailbox.latest(&snapshot);
+  if (!pose_found ||
       !mecvr::camera::SnapshotUsable(snapshot, SteadyNs(), 100000000)) {
     return false;
   }
