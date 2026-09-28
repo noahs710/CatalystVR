@@ -109,6 +109,7 @@ target_link_libraries(mecvr_support PRIVATE mecvr_core dxgi)
 # Native public launcher. It owns persisted configuration, package checks,
 # dry-run validation, and the actual PowerShell launch handoff.
 add_executable(mecvr_launcher WIN32 launcher/launcher_main.cc)
+target_include_directories(mecvr_launcher PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(mecvr_launcher PRIVATE comdlg32 user32)
 
 # M0B safe-injection runtime (game stream, T6). Static CRT: the injected DLL

@@ -1,83 +1,68 @@
-# MECVR Launcher
+# CatalystVR Launcher
 
 `mecvr_launcher.exe` is the public Windows entry point for the preview
 package. It keeps the retail executable path and runtime choices in
-`%LOCALAPPDATA%\MECVR\launcher.ini`, then hands off to the packaged
-`launch_preview.ps1` script.
+`%LOCALAPPDATA%\MECVR\launcher.ini`, validates the packaged payload, and
+hands off to `launch_preview.ps1`.
 
-The GUI exposes the opt-in 6DoF camera bridge, STRIDE-style motion/input,
-experimental temporal stereo, turn mode, units-per-meter calibration,
-projection/quad presentation mode, quad-space selection, and opt-in palette
-diagnostics. The mod-owned IK arms/body overlay is enabled by default for the
-current public alpha and can be disabled with the explicit low-cost fallback.
-It remains a desktop-space bridge until a verified native Faith contract is
-supplied; it is not presented as native Catalyst body rendering. Palette
-diagnostics are development-only, disabled by default, and never enable GPU or
-retail-memory writes unless a reviewed native bone map is explicitly supplied.
-An optional solved-motion clip
-recording path is also exposed; clips are capped at 1,800 frames and written
-only when explicitly configured.
-Camera mode defaults to full-eye projection with stereo enabled. The quad path
-is an explicit diagnostics/cinema fallback and appears as a theatre panel by
-design; it is not the immersive gameplay mode.
-The camera transport crops each CPU eye frame to a square before it reaches the
-XR compositor; it never asks the compositor to use a desktop 16:9 render
-surface. The active OpenXR/VDXR runtime still owns the headset's requested
-resolution and refresh rate.
-The raised-hands physical-jump gesture and calibrated physical-crouch gameplay
-input are separately persisted. Either bridge can be disabled without
-disabling the mod-owned body animation or controller input.
-An additional opt-in parkour bridge maps vault to Space, climb to E, and slide
-to crouch; it is disabled by default because these are desktop input routes.
-The launcher exposes the three scan-code fields (defaults 57/18/29) so the
-bridge can match a user's keyboard layout without rebuilding the mod.
-The same control can select a previously saved clip for looped playback while
-live head/camera tracking continues.
-`Dry run` validates the selected executable and package without starting the
-game and never requires an HMD or OpenXR runtime.
+## HMD-first workflow
 
-The optional `Capture one-shot Faith contract` diagnostic arms a fail-closed
-capture in the camera module. It waits for a complete, stable, geometry-matched
-Faith palette and writes a reviewable `.map` artifact (to `%TEMP%` by default,
-or to the configured output path). The artifact is never auto-loaded and never
-enables native writes; it must be reviewed and supplied explicitly in a later
-launch.
+1. Select `MirrorsEdgeCatalyst.exe` in the Target card.
+2. Press `Quest 3 / VDXR preset`.
+3. Confirm the HMD Readiness card shows four green checks.
+4. Press `Launch VR` after VDXR/OpenXR is selected as the active runtime.
 
-Runtime mode is explicit and persisted: `camera` selects the M3B 6DoF/capture
-path, while `mono` selects the stable M2B desktop/quad path. The launcher
-passes the selected mode directly to `launch_preview.ps1`.
+The readiness card checks the executable, package, OpenXR loader plus M3B
+camera bridge, and the immersive profile. It does not pretend to detect a
+connected headset in advance; the active OpenXR/VDXR runtime performs the
+connection check during startup.
 
-The launch backend is also explicit and defaults to `direct`. The optional
-`frosty` backend starts a configured Frosty pack, waits for the exact new
-Catalyst executable, and then performs MECVR injection. It never edits
-Frosty profiles, ModData, CAS, or game files.
+The preset selects camera mode, immersive stereo projection, tracked motion
+input, performance pacing, and disables the diagnostic body overlay. VDXR and
+the active OpenXR runtime retain ownership of requested headset resolution and
+refresh rate. CatalystVR never forces a desktop 16:9 surface or overrides the
+runtime's headset settings.
 
-When a motion clip path is configured, the XR worker serializes the solved
-mod-owned IK frames on clean shutdown in a versioned binary format. This is
-independent of Catalyst's private animation ABI and can be replayed by future
-native skeleton adapters.
+## Runtime controls
 
-For automated package validation, run:
+The main window keeps the high-frequency controls visible: camera bridge,
+motion input, immersive stereo, turn mode, performance profile, and projection
+mode. `Advanced Settings` contains diagnostics, physical jump/crouch, the
+optional parkour presentation hints, Frosty launch routing, scan-code mapping,
+motion clip capture/playback, and the fail-closed native Faith contract
+controls.
+
+The default `performance` profile keeps the shared D3D11 GPU transport active,
+disables the debug body overlay, and avoids extra readbacks. AFR and other
+frame-generation or pacing features remain owned by the active runtime and are
+compatible with the launcher because CatalystVR does not replace the runtime's
+requested resolution or refresh rate.
+
+`Dry Run` validates the selected executable and package without starting the
+game. It also reports whether the immersive HMD profile is active. It never
+requires an HMD or OpenXR runtime.
+
+## Input and fail-closed behavior
+
+Quest Touch Plus grip closes each mod-owned hand into a fist. A gripped swing
+produces a one-shot combat intent, and a gripped pull toward the body latches
+the MAG-rope intent. Jump remains a held game action so Catalyst can own ledge
+autograb/climb decisions. Left-stick locomotion remains authoritative with
+tracked-hand swing fallback, and right-stick turning remains available.
+
+The mod-owned IK layer is a deterministic procedural 21-joint pose path. It is
+currently intended for arm/hand motion and diagnostics; native Faith skeleton
+writes remain disabled unless a reviewed, geometry-matched live palette
+contract is explicitly supplied.
+
+## Automated validation
+
+Run the packaged launcher self-test from the package directory:
 
 ```text
 mecvr_launcher.exe --self-test
 ```
 
-The release launcher is deliberately thin: injection, OpenXR session setup,
-fail-closed camera writes, capture, and frame submission remain in the
-runtime components launched by `launch_preview.ps1`.
-# Performance profiles
-
-The launcher exposes three profiles:
-
-- `performance` (default): keeps the shared D3D11 GPU transport active and
-  disables palette discovery and the optional mod-owned overlay.
-- `balanced`: normal runtime behavior with optional diagnostics controlled by
-  their individual checkboxes.
-- `diagnostic`: intended for capture/evidence sessions; it does not force
-  native skeleton writes or change the runtime's requested headset resolution.
-
-The profile is passed as `MECVR_PERFORMANCE_MODE`. It is deliberately
-runtime-neutral: AFR or compositor frame-generation remains owned by the
-active OpenXR/runtime stack, while MECVR avoids extra presents and expensive
-CPU readbacks.
+The launcher is deliberately thin. Injection, OpenXR session setup,
+fail-closed camera writes, capture, and frame submission remain in the runtime
+components launched by `launch_preview.ps1`.
