@@ -84,6 +84,10 @@ class LiveCapture final {
   std::uint32_t scale_height_ = 0;
   DXGI_FORMAT scale_format_ = DXGI_FORMAT_UNKNOWN;
   std::int64_t last_capture_ns_ = 0;
+  // Temporal stereo receives one eye per game Present. Keep independent
+  // cadence for each eye so the right-eye present is not rejected merely
+  // because it follows the left-eye present within the same XR frame.
+  std::array<std::int64_t, 2> last_stereo_capture_ns_{};
   std::array<std::vector<std::uint8_t>, 2> stereo_pixels_;
   std::array<std::uint32_t, 2> stereo_width_{};
   std::array<std::uint32_t, 2> stereo_height_{};

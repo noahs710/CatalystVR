@@ -2,7 +2,7 @@
 param(
   [string]$BuildDir,
   [string]$OutputDir,
-  [string]$Version = '1.5.2.9-alpha'
+  [string]$Version = '1.5.2.10-alpha'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -65,7 +65,7 @@ $manifest = @(
   "MECVR version: $Version"
   "Built UTC: $([DateTime]::UtcNow.ToString('o'))"
   'Artifact: preview foundation; not a complete retail game conversion.'
-  'Stereo: the public alpha defaults to correctly converged immersive projection; temporal per-eye rendering is explicit opt-in and simultaneous native dual-pass proof is pending.'
+  'Stereo: the public launcher enables correctly converged immersive projection with a square-eye crop contract, per-eye camera poses, and temporal per-eye capture; simultaneous native dual-pass remains a future optimization.'
   'Transport: capability-gated D3D11 shared-texture GPU path is default; CPU readback is the automatic fallback.'
   'Camera: opt-in M3b bridge; requires an OpenXR runtime and explicit calibration.'
   'Launcher: mecvr_launcher.exe provides persisted settings, performance profiles, dry-run checks, and launch handoff.'

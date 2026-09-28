@@ -17,17 +17,22 @@
 #include <chrono>
 #include <cstdint>
 #include <atomic>
+#include <array>
 #include <iostream>
+#include <memory>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include <windows.h>
 
 #include "openxr/mailbox.h"
 #include "openxr/mock_xr_backend.h"
+#include "openxr/stereo_mailbox.h"
 #include "openxr/xr_backend.h"
 #include "openxr/xr_frame_worker.h"
 #include "render/m2b_mono.h"
+#include "render/stereo_frame.h"
 
 namespace {
 
@@ -47,6 +52,19 @@ void Check(bool ok, const std::string& name, const std::string& detail = "") {
 void SleepMs(double ms) {
   std::this_thread::sleep_for(
       std::chrono::duration<double, std::milli>(ms));
+}
+
+std::shared_ptr<const mecvr::render::StereoFrame> MakeStereoFrame(
+    std::uint64_t epoch, std::uint64_t pose_sequence) {
+  auto frame = std::make_shared<mecvr::render::StereoFrame>();
+  frame->epoch = epoch;
+  frame->pose_sequence = pose_sequence;
+  frame->width[0] = frame->width[1] = 4;
+  frame->height[0] = frame->height[1] = 2;
+  frame->capture_time_ns = mecvr::render::SteadyNanos();
+  frame->pixels_rgba[0].resize(4u * 2u * 4u, 0x11u);
+  frame->pixels_rgba[1].resize(4u * 2u * 4u, 0xEEu);
+  return frame;
 }
 
 }  // namespace
@@ -137,6 +155,48 @@ int main() {
     gpu_worker.pumpOnce();
     Check(!consumer_ready, "gpu seam: shutdown revokes readiness");
     gpu_backend.shutdown();
+  }
+
+  // ---- Phase 0c: true stereo worker submission ------------------------
+  // This is the projection seam that the live runtime uses: one completed
+  // StereoFrame is consumed, each eye is uploaded independently, and the
+  // frame is submitted only after both uploads succeed. The recording
+  // backend makes accidental mono duplication or theatre fallback observable
+  // without requiring an HMD.
+  {
+    openxr::MockXRBackend stereo_backend;
+    stereo_backend.configure({});
+    Check(stereo_backend.startup(), "stereo seam: mock backend startup");
+    openxr::FrameMailbox unused_mono(2);
+    openxr::StereoMailbox stereo_mailbox(2);
+    Check(stereo_mailbox.tryPublish(MakeStereoFrame(1, 1)),
+          "stereo seam: publish same-epoch eye pair");
+    openxr::XrFrameWorker stereo_worker(stereo_backend, unused_mono,
+                                         &stereo_mailbox);
+    Check(stereo_worker.pumpOnce(), "stereo seam: worker tick completes");
+    const openxr::M2bStats stereo_stats = stereo_worker.stats();
+    Check(stereo_stats.stereo_submitted == 1,
+          "stereo seam: projection frame submitted");
+    Check(stereo_backend.stereoProjectionEnables() == 1,
+          "stereo seam: projection mode enabled once");
+    Check(stereo_backend.stereoUploads(0) == 1 &&
+              stereo_backend.stereoUploads(1) == 1,
+          "stereo seam: both eye swapchains uploaded");
+    Check(!stereo_backend.lastStereoUpload(0).empty() &&
+              stereo_backend.lastStereoUpload(0) !=
+                  stereo_backend.lastStereoUpload(1),
+          "stereo seam: eye payloads remain independent");
+    Check(stereo_stats.submitted_new == 0 && stereo_stats.reused == 0,
+          "stereo seam: mono path not used");
+
+    // A cross-tick pair must never be submitted as if it were current. This
+    // guards against the old overlap/cross-eye artifact under frame pacing.
+    Check(stereo_mailbox.tryPublish(MakeStereoFrame(99, 99)),
+          "stereo seam: publish stale pair");
+    stereo_worker.pumpOnce();
+    Check(stereo_worker.stats().stereo_rejected == 1,
+          "stereo seam: stale pair rejected");
+    stereo_backend.shutdown();
   }
 
   // ---- Phase 1: end-to-end mono transport on the mock ------------------

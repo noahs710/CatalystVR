@@ -212,6 +212,23 @@ ViewConfig MockXRBackend::viewConfig(std::uint32_t view_index) const {
 
 std::uint32_t MockXRBackend::viewCount() const { return 2u; }
 
+bool MockXRBackend::enableStereoProjection() {
+  ++stereo_projection_enables_;
+  return true;
+}
+
+bool MockXRBackend::uploadEyeImage(std::uint32_t view_index,
+                                   const std::uint8_t* rgba,
+                                   std::uint32_t width,
+                                   std::uint32_t height) {
+  if (view_index >= 2 || rgba == nullptr || width == 0 || height == 0)
+    return false;
+  last_stereo_uploads_[view_index].assign(
+      rgba, rgba + static_cast<std::size_t>(width) * height * 4u);
+  ++stereo_uploads_[view_index];
+  return true;
+}
+
 XrTime MockXRBackend::periodNs() const {
   if (config_.display_frequency_hz <= 0.0f) return kNanosecondsPerSecond / 90;
   const double period =

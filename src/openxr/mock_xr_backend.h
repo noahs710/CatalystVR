@@ -93,12 +93,26 @@ class MockXRBackend final : public IXrBackend {
   float displayFrequencyHz() const override;
   ViewConfig viewConfig(std::uint32_t view_index) const override;
   std::uint32_t viewCount() const override;
+  bool enableStereoProjection() override;
+  bool uploadEyeImage(std::uint32_t view_index, const std::uint8_t* rgba,
+                      std::uint32_t width, std::uint32_t height) override;
   bool registerSharedCapture(
       const render::SharedCaptureRegistration& registration) override;
   bool submitSharedFrame(const render::SharedCaptureFrame& frame) override;
   void unregisterSharedCapture(std::uint64_t generation) override;
   std::uint64_t sharedFramesSubmitted() const {
     return shared_frames_submitted_;
+  }
+  std::uint32_t stereoProjectionEnables() const {
+    return stereo_projection_enables_;
+  }
+  std::uint32_t stereoUploads(std::uint32_t view_index) const {
+    return view_index < 2 ? stereo_uploads_[view_index] : 0;
+  }
+  const std::vector<std::uint8_t>& lastStereoUpload(
+      std::uint32_t view_index) const {
+    static const std::vector<std::uint8_t> kEmpty;
+    return view_index < 2 ? last_stereo_uploads_[view_index] : kEmpty;
   }
 
  private:
@@ -124,6 +138,9 @@ class MockXRBackend final : public IXrBackend {
   std::size_t replay_index_ = 0;
   render::SharedCaptureRegistration shared_registration_{};
   std::uint64_t shared_frames_submitted_ = 0;
+  std::uint32_t stereo_projection_enables_ = 0;
+  std::array<std::uint32_t, 2> stereo_uploads_{};
+  std::array<std::vector<std::uint8_t>, 2> last_stereo_uploads_;
 };
 
 }  // namespace mecvr::openxr

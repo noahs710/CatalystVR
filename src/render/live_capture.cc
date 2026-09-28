@@ -169,6 +169,7 @@ void LiveCapture::reset() {
   staging_width_ = 0;
   staging_height_ = 0;
   staging_format_ = DXGI_FORMAT_UNKNOWN;
+  last_stereo_capture_ns_ = {};
   stereo_pixels_[0].clear();
   stereo_pixels_[1].clear();
   stereo_width_ = {};
@@ -656,7 +657,7 @@ void LiveCapture::captureStereo(IDXGISwapChain* swapchain, std::uint32_t eye,
   }
   const std::int64_t now = NowNs();
   if (swapchain == nullptr ||
-      now - last_capture_ns_ < kMinCaptureIntervalNs / 2) {
+      now - last_stereo_capture_ns_[eye] < kMinCaptureIntervalNs) {
     return;
   }
   // The XR projection path is square/near-square by contract. Crop the
@@ -665,6 +666,7 @@ void LiveCapture::captureStereo(IDXGISwapChain* swapchain, std::uint32_t eye,
   // headset's view rectangle.
   MonoFramePtr frame = MakeSquareFrame(copyFrame(swapchain, now));
   if (frame == nullptr) return;
+  last_stereo_capture_ns_[eye] = now;
   if (mailbox_ != nullptr && mailbox_->depth() == 0) {
     mailbox_->tryPublish(frame);  // Mono remains the safe fallback.
   }

@@ -1,6 +1,22 @@
 # CatalystVR changelog
 
-## Unreleased — 1.5.2.9-alpha
+## 1.5.2.10-alpha — 2026-09-28
+
+### Stereo projection milestone
+
+- Replaced the CPU eye upload letterbox path with the same centered square/near-square crop contract used by the GPU compositor. Every runtime-selected eye pixel is filled; no 16:9 desktop image, black bars, zoomed theatre panel, or stale staging contents are submitted.
+- Added independent per-eye temporal capture throttles so the second eye cannot be dropped at high refresh rates while pairing consecutive game presents.
+- Added an end-to-end worker seam test that records both eye uploads, proves independent payloads reach both projection swapchains, proves the mono path is bypassed, and rejects stale cross-tick pairs.
+- Added mock-backend stereo upload instrumentation so the projection contract is continuously testable without an HMD.
+- Kept runtime-owned eye dimensions and refresh pacing intact; no launcher override changes those OpenXR runtime choices.
+
+### Verification
+
+- Release build: passed.
+- Full CTest matrix: 36/36 passed.
+- Focused stereo, epoch, and crop tests: passed.
+
+## Unreleased
 
 ### Native Faith contract capture and square XR transport
 
