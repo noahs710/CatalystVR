@@ -1,5 +1,14 @@
 # CatalystVR changelog
 
+## Unreleased — 1.5.2.7-alpha
+
+### Staged Faith palette identity
+
+- Added bounded D3D11 `CopyResource` and full-region `CopySubresourceRegion` tracking so staged Faith palettes retain their verified source-to-bound-resource identity.
+- Added direct vertex-binding evidence from `VSSetShaderResources`, allowing the target tracker to verify a stable palette even when the title records or submits draws through an unobserved path.
+- Native arm writes can now target the bound SRV resource while rewriting only mapped upload bytes, subject to the existing executable, layout, pose-freshness, and native bone-map gates.
+- Kept copy propagation discovery-only unless the explicit native contract is loaded; ordinary performance launches remain unaffected.
+
 ## Unreleased — 1.5.2.6-alpha
 
 ### Stereo transport and launcher clarity

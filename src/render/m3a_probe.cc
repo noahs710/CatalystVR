@@ -102,6 +102,8 @@ constexpr std::size_t kDrawIndexedInstancedIndirect = 39;
 constexpr std::size_t kDrawInstancedIndirect = 40;
 constexpr std::size_t kGSSetCB = 22;
 constexpr std::size_t kIATopo = 24;
+constexpr std::size_t kCopySubresourceRegion = 46;
+constexpr std::size_t kCopyResource = 47;
 constexpr std::size_t kOmSetRT = 33;
 constexpr std::size_t kRSSetState = 43;
 constexpr std::size_t kRSSetViewports = 44;
@@ -185,7 +187,7 @@ struct D12CommandListEntry {
 struct CtxEntry {
   void** vtable = nullptr;
   // Sized by kH_Count (see static_assert below the CtxHook enum).
-  void* orig[27] = {};
+  void* orig[29] = {};
   volatile LONG draw_calls = 0;
   volatile LONG finish_calls = 0;
   volatile LONG execute_calls = 0;
@@ -218,6 +220,8 @@ enum CtxHook {
   kH_DrawIndexedInstancedIndirect,
   kH_DrawInstancedIndirect,
   kH_Update,
+  kH_CopySubresourceRegion,
+  kH_CopyResource,
   kH_Map,
   kH_Unmap,
   kH_RSViewports,
@@ -229,7 +233,7 @@ enum CtxHook {
   kH_FinishCommandList,
   kH_Count,
 };
-static_assert(kH_Count == 27, "CtxEntry::orig + g_detours sized for 27");
+static_assert(kH_Count == 29, "CtxEntry::orig + g_detours sized for 29");
 
 constexpr std::size_t kCtxSlots[kH_Count] = {
     kVSSetCB, kPSSetCB, kGSSetCB, kCSSetCB, kVSSetShaderResources,
@@ -237,7 +241,8 @@ constexpr std::size_t kCtxSlots[kH_Count] = {
     kIASetIndexBuffer,
     kDrawIndexed, kDraw, kDrawIndexedInstanced, kDrawInstanced, kDrawAuto,
     kDrawIndexedInstancedIndirect, kDrawInstancedIndirect,
-    kUpdateSubresource, kMap, kUnmap, kRSSetViewports, kOmSetRT, kClearRTV,
+    kUpdateSubresource, kCopySubresourceRegion, kCopyResource, kMap, kUnmap,
+    kRSSetViewports, kOmSetRT, kClearRTV,
     kExecuteCommandList, kClearState, kFlush, kFinishCommandList};
 
 VtableEntry g_vtables[kMaxVtables];
@@ -439,6 +444,10 @@ struct PaletteResourceRecord {
   UINT layout = 0;
   UINT samples = 0;
   bool dumped = false;
+  bool candidate_valid = false;
+  mecvr::render::BonePaletteCandidate candidate{};
+  UINT copy_target_id = 0;
+  std::uint64_t copy_target_present = 0;
   std::uint64_t last_content_fingerprint = 0;
   std::uint32_t content_changes = 0;
 };
@@ -485,13 +494,24 @@ void NotePaletteResourceSample(ID3D11Resource* res, UINT size,
 }
 
 #ifdef MECVR_M3B
+UINT NativeTargetId(const PaletteResourceRecord* record) {
+  if (record == nullptr) return 0;
+  if (record->copy_target_id != 0 && record->copy_target_present != 0 &&
+      g_present_idx >= record->copy_target_present &&
+      g_present_idx - record->copy_target_present <= 2) {
+    return record->copy_target_id;
+  }
+  return record->id;
+}
+
 bool TryBuildNativePoseWrite(PaletteResourceRecord* record,
                              const PendingMap& pending,
                              const mecvr::render::BonePaletteCandidate& candidate,
                              const std::uint64_t content_fingerprint) {
   const auto target = g_native_palette_target.snapshot();
+  const UINT target_id = NativeTargetId(record);
   if (!g_native_bone_map_loaded || !target.verified || record == nullptr ||
-      target.resource_id != record->id || pending.pdata == nullptr ||
+      target.resource_id != target_id || pending.pdata == nullptr ||
       pending.size == 0) {
     return false;
   }
@@ -515,7 +535,7 @@ bool TryBuildNativePoseWrite(PaletteResourceRecord* record,
   observation.present_index = pending.cb != nullptr
                                   ? pending.cb->last_present
                                   : g_present_idx;
-  observation.constant_buffer_id = record->id;
+  observation.constant_buffer_id = target_id;
   observation.resource_size = record->size != 0 ? record->size : pending.size;
   observation.content_fingerprint = content_fingerprint;
   observation.candidate = candidate;
@@ -555,8 +575,9 @@ bool TryBuildNativePoseUpload(
     std::uint64_t content_fingerprint, const void* source,
     std::size_t source_size, void* output, std::size_t output_size) {
   const auto target = g_native_palette_target.snapshot();
+  const UINT target_id = NativeTargetId(record);
   if (!g_native_bone_map_loaded || !target.verified || record == nullptr ||
-      target.resource_id != record->id || source == nullptr || output == nullptr ||
+      target.resource_id != target_id || source == nullptr || output == nullptr ||
       source_size == 0 || source_size > 65536) {
     return false;
   }
@@ -576,7 +597,7 @@ bool TryBuildNativePoseUpload(
   }
   mecvr::render::NativePaletteObservation observation;
   observation.present_index = g_present_idx;
-  observation.constant_buffer_id = record->id;
+  observation.constant_buffer_id = target_id;
   observation.resource_size = record->size != 0 ? record->size
                                                 : static_cast<UINT>(source_size);
   observation.content_fingerprint = content_fingerprint;
@@ -667,8 +688,18 @@ void NoteNonCbPalette(ID3D11Resource* res, const PendingMap& pending) {
     // matrix buffer that happens to resemble a palette.
     g_native_skeleton_adapter.reset();
     g_native_palette_target.reset();
+    record->candidate_valid = false;
+    record->candidate = {};
+    record->copy_target_id = 0;
+    record->copy_target_present = 0;
     return;
   }
+  // Keep the verified source layout alongside the resource record. Frostbite
+  // may map an upload buffer and then copy it into the SRV actually consumed
+  // by the skinned draw; the copy hook uses this bounded contract to carry
+  // target identity forward without reading or writing GPU-only memory.
+  record->candidate_valid = true;
+  record->candidate = candidate;
   // Content fingerprints are only needed by the opt-in native writer. The
   // normal alpha path is read-only; hashing every candidate upload (up to
   // 64 KiB per observation) needlessly adds CPU and memory traffic to the
@@ -718,6 +749,68 @@ void NoteNonCbPalette(ID3D11Resource* res, const PendingMap& pending) {
        static_cast<void*>(res), record->size, record->bind_flags,
        record->offset, record->stride, record->matrices, record->layout,
        candidate.confidence, g_present_idx, g_phase);
+}
+
+// A dynamic upload buffer is often not the resource bound to the vertex
+// shader.  Carry only a verified Faith palette contract across a full
+// resource copy.  This keeps the native writer useful for upload->default
+// staging while preserving the existing fail-closed resource/layout gates.
+void NotePaletteCopy(ID3D11Resource* destination, ID3D11Resource* source,
+                     bool full_copy) {
+  if (!g_armed || !g_palette_discovery_enabled || !full_copy ||
+      destination == nullptr || source == nullptr || destination == source) {
+    return;
+  }
+  auto* source_record = PaletteRecordFor(source, 0, 0);
+  if (source_record == nullptr || !source_record->candidate_valid ||
+      !source_record->candidate.valid()) {
+    return;
+  }
+
+  ID3D11Buffer* buffer = nullptr;
+  if (FAILED(destination->QueryInterface(
+          __uuidof(ID3D11Buffer), reinterpret_cast<void**>(&buffer))) ||
+      buffer == nullptr) {
+    return;
+  }
+  D3D11_BUFFER_DESC desc{};
+  buffer->GetDesc(&desc);
+  buffer->Release();
+  if (desc.ByteWidth < 12 * 48 || desc.ByteWidth > 16384 ||
+      (desc.BindFlags & D3D11_BIND_SHADER_RESOURCE) == 0 ||
+      source_record->candidate.offset > desc.ByteWidth ||
+      source_record->candidate.stride == 0 ||
+      source_record->candidate.matrix_count == 0 ||
+      source_record->candidate.matrix_count >
+          (desc.ByteWidth - source_record->candidate.offset) /
+              source_record->candidate.stride) {
+    return;
+  }
+
+  auto* destination_record =
+      PaletteRecordFor(destination, desc.ByteWidth, desc.BindFlags);
+  if (destination_record == nullptr) return;
+  destination_record->candidate_valid = true;
+  destination_record->candidate = source_record->candidate;
+  destination_record->offset = static_cast<UINT>(
+      source_record->candidate.offset);
+  destination_record->stride = static_cast<UINT>(
+      source_record->candidate.stride);
+  destination_record->matrices = static_cast<UINT>(
+      source_record->candidate.matrix_count);
+  destination_record->layout = static_cast<UINT>(
+      source_record->candidate.layout);
+  source_record->copy_target_id = destination_record->id;
+  source_record->copy_target_present = g_present_idx;
+  g_native_palette_target.observePalette(destination_record->id,
+                                         destination_record->candidate,
+                                         g_present_idx);
+  const LONGLONG log_index = InterlockedIncrement64(&g_palette_change_logs);
+  if (log_index <= kMaxPaletteChangeLogs) {
+    LogF("m3a palette-copy src_id=%u dst_id=%u size=%u present=%llu\n",
+         source_record->id, destination_record->id, desc.ByteWidth,
+         static_cast<unsigned long long>(g_present_idx));
+  }
 }
 
 std::int64_t SteadyNs() {
@@ -1100,9 +1193,15 @@ using IaSetIndexBufferFn = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*,
                                                     ID3D11Buffer*, DXGI_FORMAT,
                                                     UINT);
 using UpdateFn = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*,
-                                          ID3D11Resource*, UINT,
-                                          const D3D11_BOX*, const void*, UINT,
-                                          UINT);
+                                           ID3D11Resource*, UINT,
+                                           const D3D11_BOX*, const void*, UINT,
+                                           UINT);
+using CopySubresourceRegionFn = void(STDMETHODCALLTYPE*)(
+    ID3D11DeviceContext*, ID3D11Resource*, UINT, UINT, UINT, UINT,
+    ID3D11Resource*, UINT, const D3D11_BOX*);
+using CopyResourceFn = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*,
+                                                ID3D11Resource*,
+                                                ID3D11Resource*);
 using MapFn = HRESULT(STDMETHODCALLTYPE*)(ID3D11DeviceContext*,
                                           ID3D11Resource*, UINT,
                                           D3D11_MAP, UINT,
@@ -1230,6 +1329,34 @@ void STDMETHODCALLTYPE HookCSSetCB(ID3D11DeviceContext* self, UINT start,
   OvhdAdd(g_ovh_setcb, QpcNow() - t0);
 }
 
+void NotePaletteVertexBindings(CtxEntry* context, UINT start, UINT count,
+                               ID3D11ShaderResourceView* const* views) {
+  if (context == nullptr || views == nullptr || count == 0 ||
+      start >= kTrackedSrvSlots) {
+    return;
+  }
+  const UINT limit = static_cast<UINT>(kTrackedSrvSlots - start);
+  const UINT n = count < limit ? count : limit;
+  const std::uintptr_t vertex_shader = reinterpret_cast<std::uintptr_t>(
+      context->vs != nullptr ? context->vs : g_vs);
+  if (vertex_shader == 0) return;
+  const std::uintptr_t pixel_shader = reinterpret_cast<std::uintptr_t>(
+      context->ps != nullptr ? context->ps : g_ps);
+  for (UINT i = 0; i < n; ++i) {
+    ID3D11ShaderResourceView* srv = views[i];
+    if (srv == nullptr) continue;
+    ID3D11Resource* resource = nullptr;
+    srv->GetResource(&resource);
+    if (resource == nullptr) continue;
+    PaletteResourceRecord* record = PaletteRecordFor(resource, 0, 0);
+    if (record != nullptr && record->candidate_valid) {
+      g_native_palette_target.noteVertexBinding(
+          record->id, g_present_idx, vertex_shader, pixel_shader);
+    }
+    resource->Release();
+  }
+}
+
 void STDMETHODCALLTYPE HookVSSetShaderResources(
     ID3D11DeviceContext* self, UINT start, UINT count,
     ID3D11ShaderResourceView* const* views) {
@@ -1246,6 +1373,9 @@ void STDMETHODCALLTYPE HookVSSetShaderResources(
     for (UINT i = 0; i < n; ++i)
       e->vs_srv[start + i] = views != nullptr ? views[i] : nullptr;
     g_vs_srv0 = e->vs_srv[0];
+    EnterCriticalSection(&g_cb_lock);
+    NotePaletteVertexBindings(e, start, count, views);
+    LeaveCriticalSection(&g_cb_lock);
   }
 }
 
@@ -1604,6 +1734,46 @@ void STDMETHODCALLTYPE HookUpdate(ID3D11DeviceContext* self,
     LeaveCriticalSection(&g_cb_lock);
   }
   OvhdAdd(g_ovh_update, QpcNow() - t0);
+}
+
+void STDMETHODCALLTYPE HookCopySubresourceRegion(
+    ID3D11DeviceContext* self, ID3D11Resource* destination,
+    UINT destination_subresource, UINT destination_x, UINT destination_y,
+    UINT destination_z, ID3D11Resource* source, UINT source_subresource,
+    const D3D11_BOX* source_box) {
+  CtxEntry* e = EntryFor(*reinterpret_cast<void***>(self));
+  CopySubresourceRegionFn orig =
+      e != nullptr
+          ? reinterpret_cast<CopySubresourceRegionFn>(
+                e->orig[kH_CopySubresourceRegion])
+          : nullptr;
+  if (orig != nullptr) {
+    orig(self, destination, destination_subresource, destination_x,
+         destination_y, destination_z, source, source_subresource, source_box);
+  }
+  if (g_armed && destination_subresource == 0 && source_subresource == 0) {
+    EnterCriticalSection(&g_cb_lock);
+    const bool full_copy = source_box == nullptr && destination_x == 0 &&
+                           destination_y == 0 && destination_z == 0;
+    NotePaletteCopy(destination, source, full_copy);
+    LeaveCriticalSection(&g_cb_lock);
+  }
+}
+
+void STDMETHODCALLTYPE HookCopyResource(ID3D11DeviceContext* self,
+                                        ID3D11Resource* destination,
+                                        ID3D11Resource* source) {
+  CtxEntry* e = EntryFor(*reinterpret_cast<void***>(self));
+  CopyResourceFn orig =
+      e != nullptr
+          ? reinterpret_cast<CopyResourceFn>(e->orig[kH_CopyResource])
+          : nullptr;
+  if (orig != nullptr) orig(self, destination, source);
+  if (g_armed) {
+    EnterCriticalSection(&g_cb_lock);
+    NotePaletteCopy(destination, source, true);
+    LeaveCriticalSection(&g_cb_lock);
+  }
 }
 
 HRESULT STDMETHODCALLTYPE HookMap(ID3D11DeviceContext* self,
@@ -1967,6 +2137,8 @@ void* g_detours[kH_Count] = {
     reinterpret_cast<void*>(&HookDrawIndexedInstIndirect),
     reinterpret_cast<void*>(&HookDrawInstIndirect),
     reinterpret_cast<void*>(&HookUpdate),
+    reinterpret_cast<void*>(&HookCopySubresourceRegion),
+    reinterpret_cast<void*>(&HookCopyResource),
     reinterpret_cast<void*>(&HookMap),
     reinterpret_cast<void*>(&HookUnmap),
     reinterpret_cast<void*>(&HookRSViewports),
