@@ -160,6 +160,12 @@ target_link_libraries(mecvr_bone_palette_classifier_test PRIVATE mecvr_render)
 add_test(NAME bone_palette_classifier_test
   COMMAND mecvr_bone_palette_classifier_test)
 
+add_executable(mecvr_faith_palette_match_test
+  m3a/faith_palette_match_test_main.cc)
+target_link_libraries(mecvr_faith_palette_match_test PRIVATE mecvr_render)
+add_test(NAME faith_palette_match_test
+  COMMAND mecvr_faith_palette_match_test)
+
 add_executable(mecvr_native_skeleton_adapter_test
   m3a/native_skeleton_adapter_test_main.cc)
 target_link_libraries(mecvr_native_skeleton_adapter_test PRIVATE mecvr_render)

@@ -1,5 +1,19 @@
 # CatalystVR changelog
 
+## Unreleased — 1.5.2.3-alpha
+
+### Faith palette geometry gate
+
+- Added a runtime matcher for the verified retail Faith arm chain at indices
+  `8, 9, 12, 15, 111, 112, 115, 118`.
+- Native palette observation and native pose writes now require all eight arm
+  matrices, bilateral segment symmetry, and one consistent retail scale.
+- Added model-space and local-space matching with resource reset on mismatch, so
+  an unrelated animated buffer cannot inherit a previously verified write
+  target.
+- Added `faith_palette_match_test` and the retail geometry-binding research
+  note.
+
 ## Unreleased — 1.5.2.2-alpha
 
 - Added a read-only Catalyst SkeletonAsset extraction path and a narrow

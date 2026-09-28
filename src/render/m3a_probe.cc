@@ -44,6 +44,7 @@
 #include <string>
 
 #include "render/bone_palette_classifier.h"
+#include "render/faith_palette_match.h"
 #include "render/native_skeleton_adapter.h"
 
 #ifdef MECVR_M3B
@@ -490,6 +491,9 @@ bool TryBuildNativePoseWrite(PaletteResourceRecord* record,
       pending.size == 0) {
     return false;
   }
+  const auto faith_match = mecvr::render::MatchFaithArmPalette(
+      pending.pdata, pending.size, candidate);
+  if (!faith_match) return false;
   InterlockedIncrement64(&g_native_pose_write_attempts);
 
   mecvr::ik::HumanoidPoseFrame pose;
@@ -552,6 +556,9 @@ bool TryBuildNativePoseUpload(
       source_size == 0 || source_size > 65536) {
     return false;
   }
+  const auto faith_match = mecvr::render::MatchFaithArmPalette(
+      source, source_size, candidate);
+  if (!faith_match) return false;
   InterlockedIncrement64(&g_native_pose_write_attempts);
   mecvr::ik::HumanoidPoseFrame pose;
   if (!g_body_pose_mailbox.latest(&pose)) {
@@ -624,6 +631,17 @@ void NoteNonCbPalette(ID3D11Resource* res, const PendingMap& pending) {
   const auto candidate =
       mecvr::render::ClassifyBonePalette(pending.pdata, scan);
   if (!candidate.valid()) return;
+  const auto faith_match = mecvr::render::MatchFaithArmPalette(
+      pending.pdata, scan, candidate);
+  if (!faith_match) {
+    // Do not retain a previously verified resource when the current upload no
+    // longer proves the retail Faith arm topology. This is both a resource
+    // reuse guard and a protection against promoting an unrelated animated
+    // matrix buffer that happens to resemble a palette.
+    g_native_skeleton_adapter.reset();
+    g_native_palette_target.reset();
+    return;
+  }
   // Content fingerprints are only needed by the opt-in native writer. The
   // normal alpha path is read-only; hashing every candidate upload (up to
   // 64 KiB per observation) needlessly adds CPU and memory traffic to the
@@ -648,6 +666,13 @@ void NoteNonCbPalette(ID3D11Resource* res, const PendingMap& pending) {
          verified.candidate.matrix_count,
          static_cast<unsigned>(verified.candidate.layout),
          static_cast<unsigned long long>(verified.stable_observations),
+         static_cast<unsigned long long>(g_present_idx), g_phase);
+  }
+  if (faith_match.pose_space !=
+      mecvr::render::FaithPalettePoseSpace::kModelSpace) {
+    LogF("m3a Faith arm palette matched local-space contract id=%u scale=%.6f "
+         "score=%.3f present=%llu phase=%s\n",
+         record->id, faith_match.scale, faith_match.score,
          static_cast<unsigned long long>(g_present_idx), g_phase);
   }
   g_native_palette_target.observePalette(record->id, candidate, g_present_idx);

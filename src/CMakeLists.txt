@@ -10,6 +10,7 @@ add_library(mecvr_render STATIC
   render/observer.cc
   render/force_mode.cc
   render/bone_palette_classifier.cc
+  render/faith_palette_match.cc
   render/native_skeleton_adapter.cc
 )
 target_include_directories(mecvr_render PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -157,6 +158,7 @@ set_property(TARGET mecvr_m2a_probe PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded
 add_library(mecvr_m3a_probe SHARED
   render/m3a_probe.cc
   render/bone_palette_classifier.cc
+  render/faith_palette_match.cc
   render/native_skeleton_adapter.cc
   ik/parkour_intent.cc
   render/observer.cc
@@ -174,6 +176,7 @@ add_library(mecvr_m3b_live SHARED
   render/body_overlay.cc
   render/body_overlay_geometry.cc
   render/bone_palette_classifier.cc
+  render/faith_palette_match.cc
   render/native_skeleton_adapter.cc
   ik/parkour_intent.cc
   render/live_capture.cc
