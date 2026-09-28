@@ -67,6 +67,10 @@ struct M2bStats {
   std::vector<EyeSubmitRecord> eye_log;
   std::uint64_t stereo_submitted = 0;
   std::uint64_t stereo_rejected = 0;
+  std::uint64_t stereo_invalid = 0;
+  std::uint64_t stereo_stale = 0;
+  std::uint64_t stereo_backend_rejected = 0;
+  std::uint64_t stereo_upload_rejected = 0;
   std::uint64_t gpu_submitted = 0;
   std::uint64_t gpu_fallback = 0;
   std::uint64_t gpu_registration_failed = 0;

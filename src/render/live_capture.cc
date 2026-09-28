@@ -50,8 +50,11 @@ MonoFramePtr MakeSquareFrame(const MonoFramePtr& source) {
 // 60 Hz tick is enough for the compositor to reproject between updates and
 // keeps the render hook out of the game's frame-critical path.
 constexpr std::int64_t kMinCaptureIntervalNs = 16666666;
-constexpr std::uint32_t kMaxReadbackWidth = 1920;
-constexpr std::uint32_t kMaxReadbackHeight = 1080;
+// Do not force the XR source through a 1080p bottleneck. The runtime owns the
+// eye-swapchain resolution; this bridge preserves the game's source pixels
+// up to a bounded safety ceiling, then performs the required square crop.
+constexpr std::uint32_t kMaxReadbackWidth = 2880;
+constexpr std::uint32_t kMaxReadbackHeight = 2880;
 
 template <typename T>
 void Release(T** value) {
@@ -647,25 +650,25 @@ void LiveCapture::capture(IDXGISwapChain* swapchain) {
   if (frame != nullptr && mailbox_->tryPublish(frame)) last_capture_ns_ = now;
 }
 
-void LiveCapture::captureStereo(IDXGISwapChain* swapchain, std::uint32_t eye,
+bool LiveCapture::captureStereo(IDXGISwapChain* swapchain, std::uint32_t eye,
                                 std::uint64_t epoch,
                                 std::uint64_t pose_sequence) {
   if (stereo_mailbox_ == nullptr || eye >= 2 || epoch == 0 ||
       pose_sequence == 0) {
     capture(swapchain);
-    return;
+    return false;
   }
   const std::int64_t now = NowNs();
   if (swapchain == nullptr ||
       now - last_stereo_capture_ns_[eye] < kMinCaptureIntervalNs) {
-    return;
+    return false;
   }
   // The XR projection path is square/near-square by contract. Crop the
   // desktop backbuffer once at the transport boundary so the OpenXR eye
   // texture is never a 16:9 desktop image that later gets zoomed into the
   // headset's view rectangle.
   MonoFramePtr frame = MakeSquareFrame(copyFrame(swapchain, now));
-  if (frame == nullptr) return;
+  if (frame == nullptr) return false;
   last_stereo_capture_ns_[eye] = now;
   if (mailbox_ != nullptr && mailbox_->depth() == 0) {
     mailbox_->tryPublish(frame);  // Mono remains the safe fallback.
@@ -694,6 +697,7 @@ void LiveCapture::captureStereo(IDXGISwapChain* swapchain, std::uint32_t eye,
     if (stereo_mailbox_->tryPublish(stereo)) stereo_left_valid_ = false;
   }
   last_capture_ns_ = now;
+  return true;
 }
 
 }  // namespace mecvr::render

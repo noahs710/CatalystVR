@@ -2955,19 +2955,22 @@ HRESULT STDMETHODCALLTYPE HookPresent(IDXGISwapChain* self, UINT sync,
       const std::uint64_t pose_sequence =
           g_stereo_pair_pose.load(std::memory_order_acquire);
       const std::uint32_t eye = stereo_eye;
-      capture->captureStereo(self, eye, epoch, pose_sequence);
-      if (eye == 0) {
-        g_stereo_eye.store(1, std::memory_order_release);
-      } else {
-        const std::uint64_t next_epoch =
-            g_xr_epoch.load(std::memory_order_acquire);
-        const std::uint64_t next_pose =
-            g_xr_pose_sequence.load(std::memory_order_acquire);
-        if (next_epoch != 0 && next_pose != 0) {
-          g_stereo_pair_epoch.store(next_epoch, std::memory_order_release);
-          g_stereo_pair_pose.store(next_pose, std::memory_order_release);
+      const bool captured =
+          capture->captureStereo(self, eye, epoch, pose_sequence);
+      if (captured) {
+        if (eye == 0) {
+          g_stereo_eye.store(1, std::memory_order_release);
+        } else {
+          const std::uint64_t next_epoch =
+              g_xr_epoch.load(std::memory_order_acquire);
+          const std::uint64_t next_pose =
+              g_xr_pose_sequence.load(std::memory_order_acquire);
+          if (next_epoch != 0 && next_pose != 0) {
+            g_stereo_pair_epoch.store(next_epoch, std::memory_order_release);
+            g_stereo_pair_pose.store(next_pose, std::memory_order_release);
+          }
+          g_stereo_eye.store(0, std::memory_order_release);
         }
-        g_stereo_eye.store(0, std::memory_order_release);
       }
     } else if (capture->captureGpu(self)) {
       // Published directly to the XR worker; no CPU readback this Present.
@@ -3647,7 +3650,9 @@ unsigned __stdcall PoseWorkerProc(void*) {
       const auto diagnostics = backend.diagnostics();
       LogF("m3b transport gpu_submit=%llu gpu_fallback=%llu gpu_reg_fail=%llu "
            "gpu_timeout=%llu cpu_submit=%llu upload_fail=%llu "
-           "stereo_submit=%llu stereo_reject=%llu upload_us=%lld "
+           "stereo_submit=%llu stereo_reject=%llu stereo_invalid=%llu "
+           "stereo_stale=%llu stereo_backend=%llu stereo_upload=%llu "
+           "upload_us=%lld "
            "upload_max_us=%lld present_hz=%.2f xr_hz=%.2f age_ms=%.2f "
            "active=%s\n",
            static_cast<unsigned long long>(stats.gpu_submitted),
@@ -3658,6 +3663,10 @@ unsigned __stdcall PoseWorkerProc(void*) {
            static_cast<unsigned long long>(stats.upload_failed),
            static_cast<unsigned long long>(stats.stereo_submitted),
            static_cast<unsigned long long>(stats.stereo_rejected),
+           static_cast<unsigned long long>(stats.stereo_invalid),
+           static_cast<unsigned long long>(stats.stereo_stale),
+           static_cast<unsigned long long>(stats.stereo_backend_rejected),
+           static_cast<unsigned long long>(stats.stereo_upload_rejected),
            static_cast<long long>(stats.upload_ns / 1000),
            static_cast<long long>(stats.upload_max_ns / 1000),
            stats.present_rate_hz, stats.xr_rate_hz,

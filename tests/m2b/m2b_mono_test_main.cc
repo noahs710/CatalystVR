@@ -55,13 +55,16 @@ void SleepMs(double ms) {
 }
 
 std::shared_ptr<const mecvr::render::StereoFrame> MakeStereoFrame(
-    std::uint64_t epoch, std::uint64_t pose_sequence) {
+    std::uint64_t epoch, std::uint64_t pose_sequence,
+    std::int64_t capture_time_ns = 0) {
   auto frame = std::make_shared<mecvr::render::StereoFrame>();
   frame->epoch = epoch;
   frame->pose_sequence = pose_sequence;
   frame->width[0] = frame->width[1] = 4;
   frame->height[0] = frame->height[1] = 2;
-  frame->capture_time_ns = mecvr::render::SteadyNanos();
+  frame->capture_time_ns = capture_time_ns != 0
+                               ? capture_time_ns
+                               : mecvr::render::SteadyNanos();
   frame->pixels_rgba[0].resize(4u * 2u * 4u, 0x11u);
   frame->pixels_rgba[1].resize(4u * 2u * 4u, 0xEEu);
   return frame;
@@ -165,7 +168,9 @@ int main() {
   // without requiring an HMD.
   {
     openxr::MockXRBackend stereo_backend;
-    stereo_backend.configure({});
+    openxr::MockConfig stereo_config;
+    stereo_config.start_time_ns = render::SteadyNanos();
+    stereo_backend.configure(stereo_config);
     Check(stereo_backend.startup(), "stereo seam: mock backend startup");
     openxr::FrameMailbox unused_mono(2);
     openxr::StereoMailbox stereo_mailbox(2);
@@ -189,12 +194,20 @@ int main() {
     Check(stereo_stats.submitted_new == 0 && stereo_stats.reused == 0,
           "stereo seam: mono path not used");
 
-    // A cross-tick pair must never be submitted as if it were current. This
-    // guards against the old overlap/cross-eye artifact under frame pacing.
+    // Producer epoch 99 is intentionally unrelated to the current XR frame
+    // index. A fresh pair must still submit: game Present and XR cadence are
+    // independent clocks. Only an actually old capture is stale.
     Check(stereo_mailbox.tryPublish(MakeStereoFrame(99, 99)),
+          "stereo seam: publish delayed producer pair");
+    stereo_worker.pumpOnce();
+    Check(stereo_worker.stats().stereo_submitted == 2,
+          "stereo seam: delayed producer pair accepted");
+    Check(stereo_mailbox.tryPublish(
+              MakeStereoFrame(100, 100, render::SteadyNanos() - 1000000000)),
           "stereo seam: publish stale pair");
     stereo_worker.pumpOnce();
-    Check(stereo_worker.stats().stereo_rejected == 1,
+    Check(stereo_worker.stats().stereo_rejected == 1 &&
+              stereo_worker.stats().stereo_stale == 1,
           "stereo seam: stale pair rejected");
     stereo_backend.shutdown();
   }

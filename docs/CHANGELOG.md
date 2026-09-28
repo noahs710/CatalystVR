@@ -1,5 +1,32 @@
 # CatalystVR changelog
 
+## 1.5.2.15-alpha — 2026-09-28
+
+Temporal stereo runtime repair milestone:
+
+- Stopped the temporal stereo eye phase from advancing when a Present was
+  throttled or a D3D readback failed. This prevents left/right capture drift
+  and the resulting non-convergent overlapping images.
+- Removed the fixed 1920×1080 source bottleneck and raised the bounded source
+  readback ceiling to 2880-class dimensions before the required square crop.
+- Replaced the incorrect one-XR-tick epoch comparison with a bounded capture
+  freshness gate. Game Present cadence and XR compositor cadence are
+  independent; valid delayed pairs are now accepted while malformed or old
+  pairs remain fail-closed.
+- Added separate runtime counters for malformed, stale, backend-rejected, and
+  upload-rejected stereo pairs, with those causes emitted in the transport log.
+- Expanded pose history to preserve delayed pair identity across compositor
+  ticks and added headless coverage for delayed producer epochs, freshness,
+  stale-pair rejection, and timing jitter.
+
+Known limitation: this release still uses the temporal per-Present capture
+bridge rather than a native simultaneous dual-pass engine render. Native Faith
+palette replacement remains evidence-gated and disabled until a stable retail
+bone contract is captured.
+
+Validation: focused stereo tests, full Release CTest, launcher/package
+self-tests, and retail attach smoke are required before publishing.
+
 ## 1.5.2.14-alpha — 2026-09-28
 
 Launcher and HMD-readiness milestone:

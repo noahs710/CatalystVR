@@ -34,7 +34,10 @@ class LiveCapture final {
   LiveCapture& operator=(const LiveCapture&) = delete;
 
   void capture(IDXGISwapChain* swapchain);
-  void captureStereo(IDXGISwapChain* swapchain, std::uint32_t eye,
+  // Returns true only when a new eye image was actually read back. The
+  // Present hook must not advance temporal eye state when the capture
+  // throttle or a D3D readback failure skipped this Present.
+  bool captureStereo(IDXGISwapChain* swapchain, std::uint32_t eye,
                      std::uint64_t epoch, std::uint64_t pose_sequence);
   bool captureGpu(IDXGISwapChain* swapchain);
   bool sharedRegistration(SharedCaptureRegistration* registration) const;

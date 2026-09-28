@@ -125,25 +125,21 @@ bool XrFrameWorker::pumpOnce() {
   if (stereo_mailbox_ != nullptr) {
     render::StereoFramePtr stereo = stereo_mailbox_->consumeNewest();
     if (stereo) {
-      // The producer must stamp both the game simulation epoch and the pose
-      // sample with the XR tick token. A mismatch is dropped rather than
-      // showing a cross-frame eye pair or silently reusing mono transport.
-      // Temporal stereo renders the two eyes on consecutive game presents;
-      // the XR worker can wake on the next compositor tick after the pair is
-      // complete. Accept only the current tick or a bounded one-tick-old
-      // source pair, while retaining the exact pair identity internally.
-      const bool current_epoch =
-          render::SameStereoEpoch(*stereo, timing.frame_index,
-                                  timing.frame_index);
-      const bool recent_epoch =
-          stereo->epoch < timing.frame_index &&
-          timing.frame_index - stereo->epoch <= 1 &&
-          stereo->pose_sequence != 0;
-      if (!render::StereoFrameValid(*stereo) ||
-          (!current_epoch && !recent_epoch)) {
+      // The producer epoch is a game/render identity, not the current XR
+      // frame index. Those clocks are independent, so requiring equality (or
+      // a one-tick delta) rejected healthy pairs on real runtimes. Validate
+      // structure and wall-clock freshness instead; the producer still keeps
+      // both eyes on one immutable epoch/pose identity.
+      if (!render::StereoFrameValid(*stereo)) {
+        ++stats_.stereo_invalid;
+        ++stats_.stereo_rejected;
+      } else if (!render::StereoFrameFreshForDisplay(
+                     *stereo, timing.predicted_display_time_ns)) {
+        ++stats_.stereo_stale;
         ++stats_.stereo_rejected;
       } else if (!stereo_projection_enabled_ &&
                  !backend_.enableStereoProjection()) {
+        ++stats_.stereo_backend_rejected;
         ++stats_.stereo_rejected;
       } else {
         stereo_projection_enabled_ = true;
@@ -164,6 +160,7 @@ bool XrFrameWorker::pumpOnce() {
           ++stats_.stereo_submitted;
           return true;
         }
+        ++stats_.stereo_upload_rejected;
         ++stats_.stereo_rejected;
       }
     }

@@ -44,7 +44,10 @@ class PoseMailbox {
   }
 
  private:
-  static constexpr std::size_t kHistorySize = 8;
+  // XR and Present cadence are independent. Keep enough samples for a
+  // delayed stereo pair to resolve its immutable pose without falling back
+  // to an unrelated newest pose.
+  static constexpr std::size_t kHistorySize = 32;
   mutable std::mutex mutex_;
   XRFramePoseSnapshot snapshot_;
   std::array<XRFramePoseSnapshot, kHistorySize> history_{};

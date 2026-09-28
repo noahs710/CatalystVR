@@ -35,6 +35,7 @@ int main() {
   using mecvr::render::M6EpochGate;
   using mecvr::render::M6EpochToken;
   using mecvr::render::SameStereoEpoch;
+  using mecvr::render::StereoFrameFreshForDisplay;
   using mecvr::render::StereoFrameValid;
   auto frame = Make(7, 7, 10, 20);
   bool ok = true;
@@ -44,6 +45,16 @@ int main() {
   ok &= Check(!SameStereoEpoch(*frame, 7, 8), "cross pose rejected");
   ok &= Check(frame->pixels_rgba[0] != frame->pixels_rgba[1],
               "independent eye pixels preserved");
+  ok &= Check(StereoFrameFreshForDisplay(*frame, 100),
+              "fresh pair accepted at predicted display time");
+  ok &= Check(StereoFrameFreshForDisplay(*frame, 250000100),
+              "pair remains valid across several XR ticks");
+  ok &= Check(!StereoFrameFreshForDisplay(*frame, 250000101),
+              "old pair rejected by freshness window");
+  ok &= Check(StereoFrameFreshForDisplay(*frame, 50),
+              "slightly future pair accepted for clock jitter");
+  ok &= Check(!StereoFrameFreshForDisplay(*frame, 0),
+              "missing display timestamp rejected");
 
   auto malformed = Make(7, 7, 10, 20);
   malformed->pixels_rgba[1].pop_back();

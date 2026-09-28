@@ -115,4 +115,21 @@ inline bool SameStereoEpoch(const StereoFrame& frame,
          frame.pose_sequence == pose_sequence;
 }
 
+// A producer pair is allowed to arrive several XR ticks after it was
+// captured because game Present and XR compositor cadence are independent.
+// Keep a bounded freshness window for display safety, but do not compare the
+// game's producer epoch to the unrelated current XR frame index.
+inline bool StereoFrameFreshForDisplay(
+    const StereoFrame& frame, std::int64_t predicted_display_time_ns,
+    std::int64_t max_age_ns = 250000000,
+    std::int64_t max_future_ns = 50000000) {
+  if (!StereoFrameValid(frame) || frame.capture_time_ns <= 0 ||
+      predicted_display_time_ns <= 0 || max_age_ns < 0 || max_future_ns < 0) {
+    return false;
+  }
+  const std::int64_t delta =
+      predicted_display_time_ns - frame.capture_time_ns;
+  return delta <= max_age_ns && delta >= -max_future_ns;
+}
+
 }  // namespace mecvr::render
