@@ -99,9 +99,11 @@ void GameInputSynth::update(std::uint64_t timestamp_ms,
                             const openxr::ControllerState& right,
                             bool physically_crouched,
                             bool physical_jump,
-                            const ik::ParkourIntents& parkour) {
+                            const ik::ParkourIntents& parkour,
+                            const PoseState& head) {
   MotionSample sample;
   sample.timestamp = timestamp_ms;
+  sample.head = head;
   sample.left_stick = {left.thumbstick_x, left.thumbstick_y};
   sample.right_stick = {right.thumbstick_x, right.thumbstick_y};
   sample.left_hand = ToPose(left.grip_pose, left.pose_valid);
@@ -157,12 +159,20 @@ void GameInputSynth::update(std::uint64_t timestamp_ms,
     }
   }
 
-  if (sample.jump && !previous_jump_) tapKey(parkour_keys_.vault_scan);
+  // Space remains a game-owned action: Catalyst decides whether the held
+  // jump reaches a vault, wall-run, or ledge autograb. Keeping it held is
+  // important for the game's native climb/ledge contract.
+  if (sample.jump != jump_key_) {
+    setKey(parkour_keys_.vault_scan, sample.jump);
+    jump_key_ = sample.jump;
+  }
   previous_jump_ = sample.jump;
 
-  if (parkour.climbing != parkour_climb_) {
-    setKey(parkour_keys_.climb_scan, parkour.climbing);
-    parkour_climb_ = parkour.climbing;
+  const auto& intent = scheme_.latestIntent();
+  const bool next_rope = intent.left.mag_rope_held || intent.right.mag_rope_held;
+  if (next_rope != mag_rope_) {
+    setKey(parkour_keys_.mag_rope_scan, next_rope);
+    mag_rope_ = next_rope;
   }
 
   // A fast tracked-hand strike is an authored melee edge. Catalyst's normal
@@ -213,13 +223,15 @@ void GameInputSynth::releaseAll() {
     if (key_state_[i]) setKey(scan_codes[i], false);
     key_state_[i] = false;
   }
-  if (parkour_climb_) setKey(parkour_keys_.climb_scan, false);
+  if (jump_key_) setKey(parkour_keys_.vault_scan, false);
+  if (mag_rope_) setKey(parkour_keys_.mag_rope_scan, false);
   if (mouse_left_) setMouseButton(MOUSEEVENTF_LEFTDOWN, false);
   if (mouse_right_) setMouseButton(MOUSEEVENTF_RIGHTDOWN, false);
   mouse_left_ = false;
   mouse_right_ = false;
   previous_melee_ = false;
-  parkour_climb_ = false;
+  jump_key_ = false;
+  mag_rope_ = false;
 }
 
 }  // namespace mecvr::input

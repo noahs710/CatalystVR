@@ -2,7 +2,7 @@
 param(
   [string]$BuildDir,
   [string]$OutputDir,
-  [string]$Version = '1.5.2.12-alpha'
+  [string]$Version = '1.5.2.13-alpha'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -43,7 +43,7 @@ foreach ($relative in $required) {
   Copy-Item -LiteralPath $source -Destination (Join-Path $stageResolved 'bin')
 }
 
-@('README.md', 'RELEASE.md', 'CAMERA.md', 'INPUT.md', 'TEST_MATRIX.md', 'ENGINE_INTEL.md', 'LAUNCHER.md', 'FEATURE_BENCHMARK.md', 'FROSTY_COEXISTENCE.md', 'RETAIL_EVIDENCE.md') | ForEach-Object {
+@('README.md', 'RELEASE.md', 'CHANGELOG.md', 'CAMERA.md', 'INPUT.md', 'TEST_MATRIX.md', 'ENGINE_INTEL.md', 'LAUNCHER.md', 'FEATURE_BENCHMARK.md', 'FROSTY_COEXISTENCE.md', 'RETAIL_EVIDENCE.md') | ForEach-Object {
   $source = Join-Path $repo "docs\$_"
   if (Test-Path -LiteralPath $source) { Copy-Item -LiteralPath $source -Destination (Join-Path $stageResolved 'docs') }
 }
@@ -71,7 +71,8 @@ $manifest = @(
   'Launcher: mecvr_launcher.exe provides persisted settings, performance profiles, dry-run checks, and launch handoff.'
   'Licensing: LICENSE, THIRD-PARTY-NOTICES.txt, and licenses/OPENXR-LICENSE.txt are included.'
   'Frosty: optional explicit backend launches a configured pack and injects only into a newly matched exact Catalyst executable.'
-  'IK: deterministic 21-joint full-body procedural pose layer is included and headless-tested.'
+  'IK: deterministic 21-joint full-body procedural pose layer is included and headless-tested; squeeze grip drives mod-owned fist presentation.'
+  'Input: Touch Plus squeeze grip closes each hand, gripped hand swings pulse combat, and grip-pull latches MAG rope; jump remains held/game-owned for ledge autograb.'
   'Asset index: tools/index_catalyst_assets.ps1 performs a read-only Data/Patch character package scan.'
   'Skeleton: the retail 169-bone female hierarchy and arm indices are asset-hash verified; game-visible writes still require a matching live palette/layout signature.'
   'Tests: see ctest-release.txt; packaging stops on any failure.'

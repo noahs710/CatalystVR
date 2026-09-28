@@ -17,8 +17,8 @@ param(
   [switch]$DisablePhysicalCrouchInput,
   [switch]$EnableParkourInput,
   [string]$ParkourVaultScan = '57',
-  [string]$ParkourClimbScan = '18',
   [string]$ParkourSlideScan = '29',
+  [string]$MagRopeScan = '16',
   [string]$RecordMotionClip,
   [string]$PlayMotionClip,
   [switch]$DiscoverPalettes,
@@ -36,7 +36,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 if ([string]::IsNullOrWhiteSpace($PackageRoot)) {
-  $PackageRoot = Join-Path $PSScriptRoot '..\dist\MECVR-1.5.2.12-alpha'
+  $PackageRoot = Join-Path $PSScriptRoot '..\dist\MECVR-1.5.2.13-alpha'
 }
 $root = (Resolve-Path $PackageRoot).Path
 $bin = Join-Path $root 'bin'
@@ -76,8 +76,8 @@ $env:MECVR_ENABLE_PHYSICAL_CROUCH_INPUT =
 $env:MECVR_ENABLE_PARKOUR_INPUT =
   if ($EnableParkourInput) { '1' } else { '0' }
 $env:MECVR_PARKOUR_VAULT_SCAN = $ParkourVaultScan
-$env:MECVR_PARKOUR_CLIMB_SCAN = $ParkourClimbScan
 $env:MECVR_PARKOUR_SLIDE_SCAN = $ParkourSlideScan
+$env:MECVR_MAG_ROPE_SCAN = $MagRopeScan
 $env:MECVR_RECORD_MOTION_CLIP = $RecordMotionClip
 $env:MECVR_PLAY_MOTION_CLIP = $PlayMotionClip
 $nativePoseRequested = -not [string]::IsNullOrWhiteSpace($NativeBoneMap)

@@ -3278,10 +3278,10 @@ unsigned __stdcall PoseWorkerProc(void*) {
     };
     parkour_keys.vault_scan = read_scan("MECVR_PARKOUR_VAULT_SCAN",
                                         parkour_keys.vault_scan);
-    parkour_keys.climb_scan = read_scan("MECVR_PARKOUR_CLIMB_SCAN",
-                                        parkour_keys.climb_scan);
     parkour_keys.slide_scan = read_scan("MECVR_PARKOUR_SLIDE_SCAN",
                                         parkour_keys.slide_scan);
+    parkour_keys.mag_rope_scan = read_scan("MECVR_MAG_ROPE_SCAN",
+                                           parkour_keys.mag_rope_scan);
     char turn_mode[16] = {};
     const DWORD turn_len = GetEnvironmentVariableA(
         "MECVR_TURN_MODE", turn_mode, sizeof(turn_mode));
@@ -3307,6 +3307,7 @@ unsigned __stdcall PoseWorkerProc(void*) {
   std::uint64_t sequence = 0;
   std::uint64_t space_generation = 0;
   mecvr::input::RecenterLatch recenter_latch;
+  mecvr::input::MotionScheme motion_scheme;
   mecvr::ik::FullBodyAnimator body_animator;
   mecvr::ik::MotionClip motion_clip;
   char motion_clip_path[512] = {};
@@ -3470,13 +3471,6 @@ unsigned __stdcall PoseWorkerProc(void*) {
     }
     previous_head = body_input.head.position;
     previous_head_valid = body_input.head.valid;
-    const bool both_squeezed =
-        (left_state.buttons & mecvr::openxr::kButtonSqueeze) != 0 &&
-        (right_state.buttons & mecvr::openxr::kButtonSqueeze) != 0;
-    body_input.climbing =
-        both_squeezed && motion_left.pose.valid && motion_right.pose.valid &&
-        motion_left.pose.position.y > body_input.head.position.y - 0.35 &&
-        motion_right.pose.position.y > body_input.head.position.y - 0.35;
     body_input.grounded =
         !(body_input.velocity.y > 0.9 && motion_left.pose.valid &&
           motion_right.pose.valid &&
@@ -3502,6 +3496,48 @@ unsigned __stdcall PoseWorkerProc(void*) {
         static_cast<float>(motion_right.pose.position.z);
     const bool hands_raised_for_jump = mecvr::input::HandsRaisedForJump(
         body_input.head.position.y, left_hand_pose, right_hand_pose);
+    mecvr::input::PoseState head_pose;
+    head_pose.valid = body_input.head.valid;
+    head_pose.quality = head_pose.valid ? 1.0f : 0.0f;
+    head_pose.position[0] = static_cast<float>(body_input.head.position.x);
+    head_pose.position[1] = static_cast<float>(body_input.head.position.y);
+    head_pose.position[2] = static_cast<float>(body_input.head.position.z);
+    head_pose.orientation[0] =
+        static_cast<float>(body_input.head.orientation.x);
+    head_pose.orientation[1] =
+        static_cast<float>(body_input.head.orientation.y);
+    head_pose.orientation[2] =
+        static_cast<float>(body_input.head.orientation.z);
+    head_pose.orientation[3] =
+        static_cast<float>(body_input.head.orientation.w);
+    mecvr::input::MotionSample motion_sample;
+    motion_sample.timestamp = static_cast<std::uint64_t>(
+        timing.predicted_display_time_ns / 1000000);
+    motion_sample.head = head_pose;
+    motion_sample.left_stick = {left_state.thumbstick_x,
+                                left_state.thumbstick_y};
+    motion_sample.right_stick = {right_state.thumbstick_x,
+                                 right_state.thumbstick_y};
+    motion_sample.left_hand = left_hand_pose;
+    motion_sample.right_hand = right_hand_pose;
+    motion_sample.left_trigger = left_state.trigger_value > 0.55f ||
+                                 (left_state.buttons &
+                                  mecvr::openxr::kButtonTrigger) != 0;
+    motion_sample.right_trigger = right_state.trigger_value > 0.55f ||
+                                  (right_state.buttons &
+                                   mecvr::openxr::kButtonTrigger) != 0;
+    motion_sample.left_grip = left_state.squeeze_value > 0.55f ||
+                              (left_state.buttons &
+                               mecvr::openxr::kButtonSqueeze) != 0;
+    motion_sample.right_grip = right_state.squeeze_value > 0.55f ||
+                               (right_state.buttons &
+                                mecvr::openxr::kButtonSqueeze) != 0;
+    motion_sample.jump = hands_raised_for_jump;
+    motion_sample.crouch = physically_crouched;
+    motion_scheme.Update(motion_sample);
+    const auto& motion_intent = motion_scheme.latestIntent();
+    motion_left.palm_open = !motion_intent.left.fist;
+    motion_right.palm_open = !motion_intent.right.fist;
     mecvr::ik::ParkourIntentInput parkour_input;
     parkour_input.head_position = body_input.head.position;
     parkour_input.floor_origin = body_input.floor_origin;
@@ -3589,7 +3625,8 @@ unsigned __stdcall PoseWorkerProc(void*) {
           body_input.grounded && g_physical_jump_enabled &&
               hands_raised_for_jump,
           g_parkour_input_enabled ? parkour
-                                   : mecvr::ik::ParkourIntents{});
+                                   : mecvr::ik::ParkourIntents{},
+          head_pose);
     }
   };
   mecvr::openxr::XrFrameWorker worker(backend, mailbox,

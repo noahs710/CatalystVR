@@ -29,7 +29,7 @@ enum : int {
   kPhysicalCrouch = 125,
   kParkourInput = 126,
   kParkourVaultScan = 127,
-  kParkourClimbScan = 128,
+  kMagRopeScan = 128,
   kParkourSlideScan = 129,
   kMode = 115,
   kBackend = 116,
@@ -61,7 +61,7 @@ HWND g_physical_jump = nullptr;
 HWND g_physical_crouch = nullptr;
 HWND g_parkour_input = nullptr;
 HWND g_parkour_vault_scan = nullptr;
-HWND g_parkour_climb_scan = nullptr;
+HWND g_mag_rope_scan = nullptr;
 HWND g_parkour_slide_scan = nullptr;
 HWND g_mode = nullptr;
 HWND g_backend = nullptr;
@@ -160,7 +160,7 @@ void SaveSettings() {
   WriteSetting(L"PhysicalCrouch", Checked(g_physical_crouch) ? L"1" : L"0");
   WriteSetting(L"ParkourInput", Checked(g_parkour_input) ? L"1" : L"0");
   WriteSetting(L"ParkourVaultScan", Text(g_parkour_vault_scan));
-  WriteSetting(L"ParkourClimbScan", Text(g_parkour_climb_scan));
+  WriteSetting(L"MagRopeScan", Text(g_mag_rope_scan));
   WriteSetting(L"ParkourSlideScan", Text(g_parkour_slide_scan));
   WriteSetting(L"Mode", Text(g_mode));
   WriteSetting(L"LaunchBackend", Text(g_backend));
@@ -227,8 +227,8 @@ void LoadSettings() {
                0);
   SetWindowTextW(g_parkour_vault_scan,
                  ReadSetting(L"ParkourVaultScan", L"57").c_str());
-  SetWindowTextW(g_parkour_climb_scan,
-                 ReadSetting(L"ParkourClimbScan", L"18").c_str());
+  SetWindowTextW(g_mag_rope_scan,
+                 ReadSetting(L"MagRopeScan", L"16").c_str());
   SetWindowTextW(g_parkour_slide_scan,
                  ReadSetting(L"ParkourSlideScan", L"29").c_str());
   SelectCombo(g_mode, ReadSetting(L"Mode", L"camera"));
@@ -418,7 +418,7 @@ void Launch() {
   if (!Checked(g_physical_crouch)) command += L" -DisablePhysicalCrouchInput";
   if (Checked(g_parkour_input)) command += L" -EnableParkourInput";
   command += L" -ParkourVaultScan " + Quote(Text(g_parkour_vault_scan)) +
-             L" -ParkourClimbScan " + Quote(Text(g_parkour_climb_scan)) +
+             L" -MagRopeScan " + Quote(Text(g_mag_rope_scan)) +
              L" -ParkourSlideScan " + Quote(Text(g_parkour_slide_scan));
   if (!Text(g_motion_clip).empty())
     command += L" -RecordMotionClip " + Quote(Text(g_motion_clip));
@@ -611,19 +611,19 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam,
           L"EDIT", L"57", WS_CHILD | WS_VISIBLE | WS_BORDER, 180, 686, 65,
           26, window, reinterpret_cast<HMENU>(kParkourVaultScan),
           GetModuleHandleW(nullptr), nullptr);
-      g_parkour_climb_scan = CreateWindowW(
-          L"EDIT", L"18", WS_CHILD | WS_VISIBLE | WS_BORDER, 320, 686, 65,
-          26, window, reinterpret_cast<HMENU>(kParkourClimbScan),
+      g_mag_rope_scan = CreateWindowW(
+          L"EDIT", L"16", WS_CHILD | WS_VISIBLE | WS_BORDER, 320, 686, 65,
+          26, window, reinterpret_cast<HMENU>(kMagRopeScan),
           GetModuleHandleW(nullptr), nullptr);
       g_parkour_slide_scan = CreateWindowW(
           L"EDIT", L"29", WS_CHILD | WS_VISIBLE | WS_BORDER, 460, 686, 65,
           26, window, reinterpret_cast<HMENU>(kParkourSlideScan),
           GetModuleHandleW(nullptr), nullptr);
       ApplyFont(g_parkour_vault_scan);
-      ApplyFont(g_parkour_climb_scan);
+      ApplyFont(g_mag_rope_scan);
       ApplyFont(g_parkour_slide_scan);
       Label(window, L"vault", 180, 714, 65, 18);
-      Label(window, L"climb", 320, 714, 65, 18);
+      Label(window, L"MAG rope", 320, 714, 65, 18);
       Label(window, L"slide", 460, 714, 65, 18);
       Label(window, L"Playback loops; live head/camera tracking remains active.",
             560, 690, 300, 22);

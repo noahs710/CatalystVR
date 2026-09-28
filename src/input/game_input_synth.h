@@ -11,8 +11,8 @@ namespace mecvr::input {
 
 struct ParkourKeyConfig {
   std::uint16_t vault_scan = 0x39;  // Space
-  std::uint16_t climb_scan = 0x12;  // E
   std::uint16_t slide_scan = 0x1d;  // Left Ctrl
+  std::uint16_t mag_rope_scan = 0x10;  // Q / ability
 };
 
 // Optional, foreground-gated desktop input bridge. It turns the device-
@@ -31,7 +31,8 @@ class GameInputSynth {
               const openxr::ControllerState& right,
               bool physically_crouched = false,
               bool physical_jump = false,
-              const ik::ParkourIntents& parkour = {});
+              const ik::ParkourIntents& parkour = {},
+              const PoseState& head = {});
   void releaseAll();
 
  private:
@@ -50,7 +51,8 @@ class GameInputSynth {
   bool mouse_right_ = false;
   bool previous_jump_ = false;
   bool previous_melee_ = false;
-  bool parkour_climb_ = false;
+  bool mag_rope_ = false;
+  bool jump_key_ = false;
   std::uint64_t last_focus_attempt_ms_ = 0;
 };
 

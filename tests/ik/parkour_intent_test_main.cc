@@ -37,7 +37,7 @@ int main() {
   input.left_hand = Hand(1.70, 0.9f);
   input.right_hand = Hand(1.70, 0.9f);
   intents = mecvr::ik::ClassifyParkourIntents(input);
-  assert(intents.climbing);
+  assert(!intents.climbing);
   assert(!intents.sliding);
   assert(!intents.wall_running);
   return 0;

@@ -115,14 +115,21 @@ STRIDE-style movement. When the left stick is neutral, alternating forward /
 back hand motion produces forward `Move2D`; a sufficiently fast alternating
 swing produces `Sprint`. An active left stick always wins, the right stick
 remains `Turn2D`, and trigger/grip/jump/crouch levels plus tracked hand poses
-are passed through. A fast hand displacement produces a one-frame `Melee`
-intent. The optional game bridge debounces that intent into a primary-attack
-click when neither trigger is held. Positions are OpenXR meters in the body frame; the scheme does not
+are passed through. Holding either standard Touch Plus squeeze/grip action
+closes that hand in the mod-owned pose. A gripped, fast hand swing produces a
+one-shot per-hand `Melee` pulse with cooldown. Holding grip while pulling a
+hand toward the head latches a per-hand MAG-rope intent; the packaged bridge
+maps the held intent to the configurable ability scan code (Q by default).
+The optional game bridge debounces combat into a primary-attack click when
+neither trigger is held. Jump is held through the game route, leaving
+Catalyst responsible for ledge autograb, vault, wall-run, and climbing
+decisions. Positions are OpenXR meters in the body frame; the scheme does not
 modify world/player transforms. Coverage is in CTest `motion_scheme_test`.
 The live body worker keeps a calibrated standing floor instead of deriving the
 floor from the current head height, so physical head lowering reaches the
 solver's crouch/slide states. Raising both tracked hands above the head also
-produces a debounced physical jump intent through the same game bridge.
+produces a physical jump hold through the same game bridge, allowing the
+game's native ledge autograb to remain authoritative.
 
 ## Open items (unresolved design questions, not silent assumptions)
 

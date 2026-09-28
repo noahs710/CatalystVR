@@ -1,6 +1,6 @@
 # MECVR Sub-project 1 Release Scope (T12, test stream)
 
-Date: 2026-09-26. This is a SUB-PROJECT scope note, not a product
+Date: 2026-09-28. This is a SUB-PROJECT scope note, not a product
 release. Nothing here is shippable to players; "shippable" below means
 usable by the next sub-project's engineers as proven foundation.
 
@@ -34,7 +34,9 @@ usable by the next sub-project's engineers as proven foundation.
   one-snapshot OpenXR pose handoff and guarded retail view-matrix rotation;
   the observe-only M3a probe remains the default capture tool.
 - **Motion scheme**: deterministic STRIDE-style arm-swing locomotion and
-  gesture mapping in `src/input/motion_scheme.*`, with stick fallback.
+  gesture mapping in `src/input/motion_scheme.*`, with stick fallback,
+  per-hand grip/fist state, one-shot gripped combat swings, and held
+  grip-pull MAG-rope intents.
 - **Full-body pose foundation**: a deterministic 21-joint humanoid solver owns
   spine, arms, legs, idle gait, locomotion, crouch, airborne and climb states.
   It is live-produced from OpenXR tracking, retains analog trigger/grip values
@@ -57,9 +59,9 @@ usable by the next sub-project's engineers as proven foundation.
   remain aligned while the player turns. It does not depend on a Catalyst
   skeleton ABI and is covered by headless geometry and WARP renderer tests.
 - **Motion-authored parkour poses**: a shared deterministic parkour-intent
-  classifier drives distinct climb, vault, slide, and wall-run presentation
-  states from tracked grip/hand-height/velocity signals. It remains a
-  mod-owned contract and does not synthesize Catalyst's game-derived actions.
+  classifier drives vault, slide, and wall-run presentation states from
+  tracked hand-height/velocity signals. Climbing remains game-owned: held
+  jump is forwarded for Catalyst's native ledge autograb/climb behavior.
 - **Authored firing recoil**: trigger edges add a bounded rearward impulse to
   the solved elbow/wrist/hand chain, then recover smoothly while preserving
   controller aim and replay determinism.
@@ -92,13 +94,14 @@ usable by the next sub-project's engineers as proven foundation.
   debounced primary-attack click when triggers are not held;
   `MECVR_ENABLE_INPUT=1` is required. The calibrated physical-crouch signal
   also drives the game's crouch key when input synthesis is enabled, and both
-  hands raised above the head produce one debounced jump tap. The launcher
+  hands raised above the head produce a held jump route. The launcher
   exposes persisted toggles for the jump gesture and physical-crouch gameplay
   bridge; disabling either leaves mod-owned body animation active.
 - **Optional parkour gameplay bridge**: the shared intents can additionally
-  synthesize vault/slide/climb desktop controls (Space/Ctrl/E) through an
-  explicit launcher toggle; its scan codes are launcher-configurable, it is
-  disabled by default, and it never writes native Catalyst state.
+  synthesize vault/slide desktop controls (held Space/Ctrl) through an
+  explicit launcher toggle. MAG rope uses a separate held grip-pull ability
+  route (Q by default). Catalyst owns climbing/autograb and no private state
+  is written by these routes.
 - **Unified M3B live path**: camera pose publication, final backbuffer capture,
   and XR submission now share one bounded worker/session; camera mode no
   longer depends on a second injected XR module.
