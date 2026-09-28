@@ -118,6 +118,19 @@ const char* ResultName(::XrResult r) {
   }
 }
 
+std::uint32_t RequestedXrResolution() {
+  char value[32] = {};
+  const DWORD length =
+      GetEnvironmentVariableA("MECVR_XR_RESOLUTION", value, sizeof(value));
+  if (length == 0 || length >= sizeof(value)) return 2048u;
+  char* end = nullptr;
+  const unsigned long parsed = std::strtoul(value, &end, 10);
+  if (end == value || *end != '\0') return 2048u;
+  if (parsed < 512ul) return 512u;
+  if (parsed > 4096ul) return 4096u;
+  return static_cast<std::uint32_t>(parsed);
+}
+
 const char* SessionStateName(::XrSessionState s) {
   switch (s) {
     case XR_SESSION_STATE_UNKNOWN:
@@ -708,7 +721,22 @@ bool RealOpenXRBackend::startup() {
       view_configs_[i].recommended_height = views[i].recommendedImageRectHeight;
       view_configs_[i].max_width = views[i].maxImageRectWidth;
       view_configs_[i].max_height = views[i].maxImageRectHeight;
+      const SwapchainSize selected = SelectSwapchainSize(
+          view_configs_[i], RequestedXrResolution());
+      view_configs_[i].swapchain_width = selected.width;
+      view_configs_[i].swapchain_height = selected.height;
     }
+    char resolution_debug[256] = {};
+    std::snprintf(
+        resolution_debug, sizeof(resolution_debug),
+        "[XR] eye target requested=%u left=%ux%u right=%ux%u "
+        "recommended=%ux%u max=%ux%u\n",
+        RequestedXrResolution(), view_configs_[0].swapchain_width,
+        view_configs_[0].swapchain_height, view_configs_[1].swapchain_width,
+        view_configs_[1].swapchain_height, view_configs_[0].recommended_width,
+        view_configs_[0].recommended_height, view_configs_[0].max_width,
+        view_configs_[0].max_height);
+    OutputDebugStringA(resolution_debug);
 
     std::uint32_t format_count = 0;
     (void)xrEnumerateSwapchainFormats(n.session, 0, &format_count, nullptr);
@@ -742,8 +770,8 @@ bool RealOpenXRBackend::startup() {
       info.usageFlags = XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT;
       info.format = chosen;
       info.sampleCount = views[i].recommendedSwapchainSampleCount;
-      info.width = views[i].recommendedImageRectWidth;
-      info.height = views[i].recommendedImageRectHeight;
+      info.width = view_configs_[i].swapchain_width;
+      info.height = view_configs_[i].swapchain_height;
       info.faceCount = 1;
       info.arraySize = 1;
       info.mipCount = 1;
@@ -1734,8 +1762,8 @@ bool RealOpenXRBackend::uploadEyeImage(std::uint32_t view_index,
                                      nullptr);
     return true;
   }
-  const std::uint32_t dst_w = view_configs_[view_index].recommended_width;
-  const std::uint32_t dst_h = view_configs_[view_index].recommended_height;
+  const std::uint32_t dst_w = view_configs_[view_index].swapchain_width;
+  const std::uint32_t dst_h = view_configs_[view_index].swapchain_height;
   if (dst_w == 0 || dst_h == 0) return false;
   // (Re)create the CPU-write staging texture at swapchain dims/format.
   if (n.staging[view_index] == nullptr || n.staging_w[view_index] != dst_w ||
@@ -1837,12 +1865,8 @@ bool RealOpenXRBackend::endFrame(bool submitted) {
   info.type = XR_TYPE_FRAME_END_INFO;
   info.displayTime = last_timing_.predicted_display_time_ns;
   info.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
-  // Quad mono (default): one image on a head-locked VIEW-space screen
-  // 2.5 m ahead at eye level, ~90-degree horizontal extent, native source
-  // aspect (no crop/stretch). The runtime renders each eye's view of the
-  // quad natively -> correct convergence; the game camera is untouched.
-  // MECVR_QUAD_SPACE=local selects the world-locked LOCAL pose instead;
-  // MECVR_MONO_LAYER=projection selects the legacy path below.
+  // Theatre/mono is an explicit diagnostic path. The normal public path is
+  // the two-eye projection layer below; no quad is created by default.
   XrSpace quad_space = n.quad_local ? n.local : n.view;
   if (quad_space == XR_NULL_HANDLE) quad_space = n.local;
   if (submitted && n.quad_enabled && n.quad_chain != XR_NULL_HANDLE &&
@@ -1876,9 +1900,9 @@ bool RealOpenXRBackend::endFrame(bool submitted) {
     frame_open_ = false;
     return qok;
   }
-  // M2B projection layer: the SAME uploaded image in both eyes (mono —
-  // identical subimages, no per-eye offset; head-pose differences reach
-  // the user only through the compositor's own reprojection).
+  // Immersive projection layer. Stereo frames upload independent eye images;
+  // mono fallback may still use identical pixels, but the runtime receives
+  // native per-eye poses and asymmetric FOVs.
   XrCompositionLayerProjection layer{};
   XrCompositionLayerProjectionView views[2] = {};
   const XrCompositionLayerBaseHeader* layer_ptrs[1] = {nullptr};
@@ -1896,9 +1920,9 @@ bool RealOpenXRBackend::endFrame(bool submitted) {
       views[i].subImage.imageRect.offset.x = 0;
       views[i].subImage.imageRect.offset.y = 0;
       views[i].subImage.imageRect.extent.width =
-          static_cast<std::int32_t>(view_configs_[i].recommended_width);
+          static_cast<std::int32_t>(view_configs_[i].swapchain_width);
       views[i].subImage.imageRect.extent.height =
-          static_cast<std::int32_t>(view_configs_[i].recommended_height);
+          static_cast<std::int32_t>(view_configs_[i].swapchain_height);
       views[i].subImage.imageArrayIndex = 0;
     }
     layer_ptrs[0] =

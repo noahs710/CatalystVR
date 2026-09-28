@@ -7,6 +7,12 @@ $failures = [System.Collections.Generic.List[string]]::new()
 if (-not $script.Contains("[ValidateSet('quad', 'projection')] [string]`$MonoLayer = 'projection'")) {
   $failures.Add('launch_preview must default to immersive projection')
 }
+if (-not $script.Contains('[ValidateRange(512, 4096)] [int]$XrResolution = 2048')) {
+  $failures.Add('launcher must default to a 2048 square XR target')
+}
+if (-not $script.Contains('$env:MECVR_XR_RESOLUTION')) {
+  $failures.Add('XR resolution setting must reach the OpenXR backend')
+}
 if (-not $script.Contains('[switch]$EnableStereo')) {
   $failures.Add('launcher must retain the stereo compatibility switch')
 }

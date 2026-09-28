@@ -1904,10 +1904,12 @@ bool TryApplyCameraOverride(CbRecord* rec, void* data, std::size_t bytes,
       g_stereo_eye_valid.load(std::memory_order_acquire);
   const std::uint64_t pair_pose_sequence =
       g_stereo_pair_pose.load(std::memory_order_acquire);
-  const bool pose_found =
+  bool pose_found =
       stereo_requested && pair_pose_sequence != 0
           ? g_pose_mailbox.find(pair_pose_sequence, &snapshot)
           : g_pose_mailbox.latest(&snapshot);
+  if (!pose_found && stereo_requested)
+    pose_found = g_pose_mailbox.latest(&snapshot);
   if (!pose_found ||
       !mecvr::camera::SnapshotUsable(snapshot, SteadyNs(), 100000000)) {
     return false;
@@ -1969,7 +1971,11 @@ bool TryApplyCameraOverride(CbRecord* rec, void* data, std::size_t bytes,
   const bool view_applied = mecvr::camera::RewriteViewPoseMatrix(
       camera_matrices, 32, 0, delta, local_translation,
       g_camera_units_per_meter, mecvr::camera::MultOrder::kColumnVector);
-  const bool applied = projection_applied && view_applied;
+  const bool applied = view_applied;
+  if (eye_pose_valid && !projection_applied && g_camera_overrides == 0) {
+    LogF("m3b projection pattern not recognized; preserving game projection "
+         "while applying XR view pose\n");
+  }
   if (applied) {
     std::memcpy(static_cast<float*>(data) + 8, camera_matrices,
                 sizeof(camera_matrices));

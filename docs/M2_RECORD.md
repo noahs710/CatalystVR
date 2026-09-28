@@ -98,7 +98,7 @@ disagree per eye; plus 77 ms bilinear upload starving the submit rate.
 Fix (transport presentation only, no camera/stereo/timing hooks): mono
 image now goes to ONE compositor quad in LOCAL space (2.5 m, ~90°),
 runtime renders each eye's view natively; chain sized to source for a
-1:1 row-copy upload (~2 ms). Default quad; `MECVR_MONO_LAYER=projection`
+1:1 row-copy upload (~2 ms). Immersive projection is the public default; `MECVR_MONO_LAYER=quad` with `MECVR_ALLOW_THEATRE=1` is diagnostic-only.
 restores the old path for A/B. First quad build silently fell back to
 projection (SAMPLED/TRANSFER_DST usage flags rejected by VDXR; found via
 up_ns still ~60 ms): fixed to COLOR_ATTACHMENT_BIT-only matching the

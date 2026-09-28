@@ -1,5 +1,25 @@
 # CatalystVR changelog
 
+## 1.5.2.12-alpha — 2026-09-28
+
+### Camera pose continuity and square XR render targets
+
+- Kept valid XR head rotation and 6DoF translation active when a renderer
+  projection signature is not recognized; projection compatibility no longer
+  disables crouch, lean, or head-turn camera motion.
+- Added a bounded fallback to the latest valid XR pose when a delayed
+  stereo-pair token has left the short history window.
+- Added explicit square per-eye swapchain sizing through
+  MECVR_XR_RESOLUTION, defaulting to 2048 and supporting 2880 on runtimes
+  that advertise the required maximum extent.
+- Clamped requested eye dimensions to OpenXR runtime limits and used the
+  selected dimensions consistently for swapchain creation, staging textures,
+  and projection-layer image rectangles.
+- Made theatre/quad presentation opt-in only; immersive projection remains
+  the public launcher default.
+- Added contract coverage for 2048/2880 square sizing and runtime maximum
+  clamping.
+
 ## 1.5.2.11-alpha — 2026-09-28
 
 ### Stereo convergence and performance correction

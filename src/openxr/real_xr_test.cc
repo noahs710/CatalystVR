@@ -105,6 +105,22 @@ int main() {
   const std::string main_thread = ThreadIdStr(std::this_thread::get_id());
   std::cout << "main thread=" << main_thread << "\n";
 
+  ViewConfig resolution_contract;
+  resolution_contract.recommended_width = 1440;
+  resolution_contract.recommended_height = 1600;
+  resolution_contract.max_width = 3664;
+  resolution_contract.max_height = 3664;
+  const SwapchainSize medium = SelectSwapchainSize(resolution_contract, 2048);
+  const SwapchainSize high = SelectSwapchainSize(resolution_contract, 2880);
+  const SwapchainSize capped =
+      SelectSwapchainSize(ViewConfig{1440, 1600, 2048, 2048}, 2880);
+  Check(medium.width == 2048 && medium.height == 2048,
+        "resolution: 2048 square target");
+  Check(high.width == 2880 && high.height == 2880,
+        "resolution: 2880 square target");
+  Check(capped.width == 2048 && capped.height == 2048,
+        "resolution: runtime maximum caps requested target");
+
   // ---- Phase A: real backend ---------------------------------------------
   RealOpenXRBackend real;
   const bool real_started = real.startup();

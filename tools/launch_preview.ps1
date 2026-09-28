@@ -30,12 +30,13 @@ param(
   [ValidateSet('balanced', 'performance', 'diagnostic')] [string]$PerformanceMode = 'performance',
   [switch]$PreserveRuntimePacing,
   [string]$NativeBoneMap,
-  [float]$UnitsPerMeter = 100.0
+  [float]$UnitsPerMeter = 100.0,
+  [ValidateRange(512, 4096)] [int]$XrResolution = 2048
 )
 
 $ErrorActionPreference = 'Stop'
 if ([string]::IsNullOrWhiteSpace($PackageRoot)) {
-  $PackageRoot = Join-Path $PSScriptRoot '..\dist\MECVR-1.5.2.11-alpha'
+  $PackageRoot = Join-Path $PSScriptRoot '..\dist\MECVR-1.5.2.12-alpha'
 }
 $root = (Resolve-Path $PackageRoot).Path
 $bin = Join-Path $root 'bin'
@@ -97,6 +98,7 @@ $env:MECVR_PERFORMANCE_MODE = $effectivePerformanceMode
 $env:MECVR_PRESERVE_RUNTIME_PACING = if ($PreserveRuntimePacing) { '1' } else { '0' }
 $env:MECVR_NATIVE_BONE_MAP = $NativeBoneMap
 $env:MECVR_UNITS_PER_METER = $UnitsPerMeter.ToString([Globalization.CultureInfo]::InvariantCulture)
+$env:MECVR_XR_RESOLUTION = $XrResolution.ToString([Globalization.CultureInfo]::InvariantCulture)
 # Theatre presentation requires an explicit diagnostic argument and is never
 # inherited from a stale process environment.
 $env:MECVR_MONO_LAYER = if ($MonoLayer -eq 'quad') { 'quad' } else { 'projection' }

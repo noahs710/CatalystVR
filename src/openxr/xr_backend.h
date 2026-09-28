@@ -79,7 +79,36 @@ struct ViewConfig {
   std::uint32_t recommended_height = 0;
   std::uint32_t max_width = 0;
   std::uint32_t max_height = 0;
+  std::uint32_t swapchain_width = 0;
+  std::uint32_t swapchain_height = 0;
 };
+
+struct SwapchainSize {
+  std::uint32_t width = 0;
+  std::uint32_t height = 0;
+};
+
+inline SwapchainSize SelectSwapchainSize(const ViewConfig& config,
+                                         std::uint32_t requested_square) {
+  std::uint32_t target = requested_square != 0 ? requested_square
+                                               : config.recommended_width;
+  if (target == 0) target = 1;
+  std::uint32_t width = target;
+  std::uint32_t height = target;
+  if (config.max_width != 0 && width > config.max_width)
+    width = config.max_width;
+  if (config.max_height != 0 && height > config.max_height)
+    height = config.max_height;
+  if (config.recommended_width != 0 && width < config.recommended_width)
+    width = config.recommended_width;
+  if (config.recommended_height != 0 && height < config.recommended_height)
+    height = config.recommended_height;
+  if (config.max_width != 0 && width > config.max_width)
+    width = config.max_width;
+  if (config.max_height != 0 && height > config.max_height)
+    height = config.max_height;
+  return {width, height};
+}
 
 // Controller snapshot: grip-pose location plus boolean action states
 // collapsed to a bitmask. pose_valid carries the XrSpaceLocation pose

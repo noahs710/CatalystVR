@@ -89,14 +89,9 @@ class RealOpenXRBackend final : public IXrBackend {
   bool uploadEyeImage(std::uint32_t view_index, const std::uint8_t* rgba,
                       std::uint32_t width,
                       std::uint32_t height) override;
-  // M2B mono presentation: a single compositor quad in LOCAL space.
-  // Identical pixels through two IPD-offset projection frustums give
-  // inconsistent disparity (dizzying); a quad lets the runtime render each
-  // eye's view of ONE image natively — correct convergence with mono
-  // content, no stereo reconstruction. Projection layers return in M6
-  // with true per-eye rendering. Auto-sized via ensureMonoLayer on the
-  // worker tick; this explicit entry point forces (re)creation. Default
-  // ON; MECVR_MONO_LAYER=projection keeps the projection path for A/B.
+  // Optional theatre/mono diagnostic presentation: a single compositor quad.
+  // It is opt-in through MECVR_MONO_LAYER=quad plus MECVR_ALLOW_THEATRE=1.
+  // The public launcher defaults to the immersive projection path.
   bool enableQuadLayer(std::uint32_t width, std::uint32_t height);
   bool ensureMonoLayer(std::uint32_t width, std::uint32_t height) override;
   bool enableStereoProjection() override;

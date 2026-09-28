@@ -75,6 +75,22 @@ int main() {
   Check(!RewriteProjectionMatrix(invalid_projection, 24, 8, left_eye),
         "non-projection buffer fails closed");
 
+  // The runtime camera path must keep applying pose motion even when a
+  // renderer variant rejects the projection signature. This mirrors the
+  // production split between view-pose and projection compatibility guards.
+  float pose_with_unknown_projection[32] = {};
+  const Mat4 valid_view =
+      MatViewFromPose(Vec3{0.0, 1.6, -2.0}, Quat{});
+  for (int i = 0; i < 16; ++i)
+    pose_with_unknown_projection[i] = static_cast<float>(valid_view.m[i]);
+  pose_with_unknown_projection[16 + 0] = 0.0f;
+  pose_with_unknown_projection[16 + 5] = 0.0f;
+  pose_with_unknown_projection[16 + 15] = 0.0f;
+  Check(RewriteViewPoseMatrix(
+            pose_with_unknown_projection, 32, 0, yaw, Vec3{0.0, 0.1, 0.0},
+            100.0, MultOrder::kColumnVector),
+        "view pose survives projection compatibility miss");
+
   if (failures == 0) std::printf("view_override: all checks passed\n");
   return failures == 0 ? 0 : 1;
 }
