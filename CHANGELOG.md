@@ -1,5 +1,21 @@
 # CatalystVR changelog
 
+## Unreleased — 1.5.2.9-alpha
+
+### Native Faith contract capture and square XR transport
+
+- Added a one-shot M3B capture path that waits for a stable, complete,
+  geometry-matched Faith arm palette and writes a reviewable native bone
+  contract artifact.
+- Kept the capture path fail-closed: it never auto-loads the artifact and never
+  enables native palette writes.
+- Added launcher and `launch_preview.ps1` controls for capture output paths,
+  persisted settings, and automatic diagnostic palette discovery.
+- Made the camera transport crop CPU eye frames to square surfaces before XR
+  submission so desktop 16:9 framing cannot leak into immersive presentation.
+- Bumped launcher settings migration to version 4 and expanded deterministic
+  launcher coverage for the capture contract.
+
 ## Unreleased — 1.5.2.8-alpha
 
 ### Deterministic Faith arm contract capture

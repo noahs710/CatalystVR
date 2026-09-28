@@ -34,8 +34,20 @@ if (-not $script.Contains("[ValidateSet('balanced', 'performance', 'diagnostic')
 if (-not $script.Contains('$env:MECVR_PERFORMANCE_MODE = $effectivePerformanceMode')) {
   $failures.Add('performance profile must reach the runtime')
 }
-if (-not $launcher.Contains('ReadSetting(L"SettingsVersion", L"1") != L"3"')) {
+if (-not $launcher.Contains('ReadSetting(L"SettingsVersion", L"1") != L"4"')) {
   $failures.Add('legacy launcher settings must migrate away from theatre defaults')
+}
+if (-not $script.Contains('[switch]$CaptureNativeBoneMap')) {
+  $failures.Add('launcher must expose one-shot native Faith contract capture')
+}
+if (-not $script.Contains('$env:MECVR_CAPTURE_NATIVE_BONE_MAP')) {
+  $failures.Add('native Faith contract capture must reach the runtime')
+}
+if (-not $script.Contains('$CaptureNativeBoneMap')) {
+  $failures.Add('native Faith contract capture must force palette discovery')
+}
+if (-not $launcher.Contains('CaptureNativeBoneMap')) {
+  $failures.Add('GUI launcher must persist and pass native contract capture')
 }
 if ($failures.Count -ne 0) {
   $failures | ForEach-Object { Write-Error $_ }

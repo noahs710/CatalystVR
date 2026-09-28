@@ -351,6 +351,9 @@ mecvr::render::NativePaletteTargetTracker g_native_palette_target;
 mecvr::ik::NativeBoneMap g_native_bone_map;
 bool g_native_bone_map_loaded = false;
 std::uint64_t g_runtime_executable_fingerprint = 0;
+bool g_native_bone_map_capture_enabled = false;
+bool g_native_bone_map_capture_written = false;
+char g_native_bone_map_capture_path[MAX_PATH] = {};
 #endif
 
 // Current GPU state snapshot (stamped on captures).
@@ -622,6 +625,51 @@ bool TryBuildNativePoseUpload(
   InterlockedIncrement64(&g_native_pose_write_rejected);
   return false;
 }
+
+void TryCaptureNativeBoneMap(
+    const PaletteResourceRecord* record, const PendingMap& pending,
+    const mecvr::render::BonePaletteCandidate& candidate) {
+  if (!g_native_bone_map_capture_enabled ||
+      g_native_bone_map_capture_written || record == nullptr ||
+      pending.pdata == nullptr || pending.size == 0 ||
+      pending.size != record->size || pending.size > kMaxScanBytes ||
+      g_runtime_executable_fingerprint == 0) {
+    return;
+  }
+  const auto source = g_native_skeleton_adapter.snapshot();
+  const auto target = g_native_palette_target.snapshot();
+  if (!source.verified || !target.verified) return;
+
+  mecvr::render::NativePaletteObservation observation;
+  observation.present_index = g_present_idx;
+  observation.constant_buffer_id = record->id;
+  observation.resource_size = record->size;
+  observation.content_fingerprint = HashWords64(pending.pdata, pending.size);
+  observation.candidate = candidate;
+  mecvr::ik::NativeBoneMap captured;
+  if (!mecvr::ik::BuildFaithArmNativeBoneMap(
+          observation, pending.pdata, pending.size,
+          g_runtime_executable_fingerprint, &captured)) {
+    return;
+  }
+  if (g_native_bone_map_capture_path[0] == '\0' ||
+      !mecvr::ik::WriteNativeBoneMap(g_native_bone_map_capture_path,
+                                     captured)) {
+    LogF("m3b native Faith contract capture failed path=%s source_id=%u "
+         "target_id=%u size=%u\n",
+         g_native_bone_map_capture_path, record->id, target.resource_id,
+         record->size);
+    g_native_bone_map_capture_enabled = false;
+    return;
+  }
+  g_native_bone_map_capture_written = true;
+  g_native_bone_map_capture_enabled = false;
+  LogF("m3b native Faith contract captured path=%s source_id=%u "
+       "target_id=%u size=%u offset=%zu stride=%zu matrices=%zu layout=%u\n",
+       g_native_bone_map_capture_path, record->id, target.resource_id,
+       record->size, candidate.offset, candidate.stride, candidate.matrix_count,
+       static_cast<unsigned>(candidate.layout));
+}
 #endif
 
 void NoteNonCbPalette(ID3D11Resource* res, const PendingMap& pending) {
@@ -735,6 +783,7 @@ void NoteNonCbPalette(ID3D11Resource* res, const PendingMap& pending) {
   }
   g_native_palette_target.observePalette(record->id, candidate, g_present_idx);
 #ifdef MECVR_M3B
+  TryCaptureNativeBoneMap(record, pending, candidate);
   if (pending.writable)
     TryBuildNativePoseWrite(record, pending, candidate, fingerprint);
 #endif
@@ -3778,6 +3827,33 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID reserved) {
                                 sizeof(palette_discovery)) > 0 &&
          (palette_discovery[0] == '1' || palette_discovery[0] == 'y' ||
          palette_discovery[0] == 'Y');
+#ifdef MECVR_M3B
+    char capture_native_map[8] = {};
+    g_native_bone_map_capture_enabled =
+        GetEnvironmentVariableA("MECVR_CAPTURE_NATIVE_BONE_MAP",
+                                capture_native_map,
+                                sizeof(capture_native_map)) > 0 &&
+        (capture_native_map[0] == '1' || capture_native_map[0] == 'y' ||
+         capture_native_map[0] == 'Y');
+    if (g_native_bone_map_capture_enabled) {
+      const DWORD capture_path_len = GetEnvironmentVariableA(
+          "MECVR_CAPTURE_NATIVE_BONE_MAP_PATH",
+          g_native_bone_map_capture_path,
+          static_cast<DWORD>(sizeof(g_native_bone_map_capture_path)));
+      if (capture_path_len == 0 ||
+          capture_path_len >= sizeof(g_native_bone_map_capture_path)) {
+        char capture_temp[MAX_PATH] = {};
+        if (GetTempPathA(MAX_PATH, capture_temp) == 0 ||
+            FAILED(StringCchPrintfA(
+                g_native_bone_map_capture_path,
+                sizeof(g_native_bone_map_capture_path),
+                "%smecvr_faith_native_%lu.map", capture_temp, g_pid))) {
+          g_native_bone_map_capture_enabled = false;
+          g_native_bone_map_capture_path[0] = '\0';
+        }
+      }
+    }
+#endif
     char performance_mode[24] = {};
     const DWORD performance_len = GetEnvironmentVariableA(
         "MECVR_PERFORMANCE_MODE", performance_mode,
@@ -3792,6 +3868,14 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID reserved) {
     LogF("m3a palette discovery: %s\n",
          g_palette_discovery_enabled ? "enabled" : "disabled");
 #ifdef MECVR_M3B
+    if (g_native_bone_map_capture_enabled) {
+      g_palette_discovery_enabled = true;
+      LogF("m3b native Faith contract capture: armed path=%s "
+           "(writes artifact only; native writes remain disabled)\n",
+           g_native_bone_map_capture_path);
+    } else {
+      LogF("m3b native Faith contract capture: disabled\n");
+    }
     char enable[8] = {};
     g_camera_enabled = GetEnvironmentVariableA(
                            "MECVR_ENABLE_CAMERA", enable, sizeof(enable)) >

@@ -43,6 +43,8 @@ enum : int {
   kPerformance = 130,
   kRuntimePacing = 131,
   kNativeBoneMap = 132,
+  kCaptureNativeBoneMap = 133,
+  kNativeBoneMapCapturePath = 134,
 };
 
 HWND g_game_path = nullptr;
@@ -70,6 +72,8 @@ HWND g_motion_playback = nullptr;
 HWND g_performance = nullptr;
 HWND g_runtime_pacing = nullptr;
 HWND g_native_bone_map = nullptr;
+  HWND g_capture_native_bone_map = nullptr;
+  HWND g_native_bone_map_capture_path = nullptr;
 HWND g_status = nullptr;
 HFONT g_font = nullptr;
 std::wstring g_root;
@@ -141,7 +145,7 @@ std::wstring Quote(const std::wstring& value) {
 }
 
 void SaveSettings() {
-  WriteSetting(L"SettingsVersion", L"3");
+  WriteSetting(L"SettingsVersion", L"4");
   WriteSetting(L"GamePath", Text(g_game_path));
   WriteSetting(L"Camera", Checked(g_camera) ? L"1" : L"0");
   WriteSetting(L"Input", Checked(g_input) ? L"1" : L"0");
@@ -167,11 +171,15 @@ void SaveSettings() {
   WriteSetting(L"PerformanceMode", Text(g_performance));
   WriteSetting(L"PreserveRuntimePacing", Checked(g_runtime_pacing) ? L"1" : L"0");
   WriteSetting(L"NativeBoneMap", Text(g_native_bone_map));
+  WriteSetting(L"CaptureNativeBoneMap",
+               Checked(g_capture_native_bone_map) ? L"1" : L"0");
+  WriteSetting(L"NativeBoneMapCapturePath",
+               Text(g_native_bone_map_capture_path));
 }
 
 void LoadSettings() {
   const bool migrate_legacy_defaults =
-      ReadSetting(L"SettingsVersion", L"1") != L"3";
+      ReadSetting(L"SettingsVersion", L"1") != L"4";
   SetWindowTextW(g_game_path, ReadSetting(L"GamePath", L"").c_str());
   SendMessageW(g_camera, BM_SETCHECK,
                ReadSetting(L"Camera", L"1") == L"1" ? BST_CHECKED
@@ -238,6 +246,13 @@ void LoadSettings() {
                    ? BST_CHECKED : BST_UNCHECKED, 0);
   SetWindowTextW(g_native_bone_map,
                  ReadSetting(L"NativeBoneMap", L"").c_str());
+  SendMessageW(g_capture_native_bone_map, BM_SETCHECK,
+               ReadSetting(L"CaptureNativeBoneMap", L"0") == L"1"
+                   ? BST_CHECKED
+                   : BST_UNCHECKED,
+               0);
+  SetWindowTextW(g_native_bone_map_capture_path,
+                 ReadSetting(L"NativeBoneMapCapturePath", L"").c_str());
 }
 
 void BrowseGame(HWND owner) {
@@ -376,6 +391,11 @@ void Launch() {
   if (Checked(g_runtime_pacing)) command += L" -PreserveRuntimePacing";
   if (!Text(g_native_bone_map).empty())
     command += L" -NativeBoneMap " + Quote(Text(g_native_bone_map));
+  if (Checked(g_capture_native_bone_map))
+    command += L" -CaptureNativeBoneMap";
+  if (!Text(g_native_bone_map_capture_path).empty())
+    command += L" -NativeBoneMapCapturePath " +
+               Quote(Text(g_native_bone_map_capture_path));
   command += L" -LaunchBackend " + Quote(Text(g_backend));
   if (Text(g_backend) == L"frosty") {
     command += L" -FrostyPath " + Quote(Text(g_frosty_path)) +
@@ -616,16 +636,28 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam,
        ApplyFont(g_native_bone_map);
        Label(window, L"Leave empty unless the exact executable/palette contract is verified.",
              40, 810, 700, 22);
-       Button(window, L"LAUNCH VR", kLaunch, 40, 850, 190, 42, BS_DEFPUSHBUTTON);
-       Button(window, L"Dry run", kDryRun, 245, 850, 130, 42);
-       Button(window, L"Save", kSave, 390, 850, 110, 42);
-       Label(window, L"STATUS", 40, 900, 160, 22);
-       g_status = CreateWindowW(L"EDIT", L"Ready. HMD is not required for Dry run.",
-                                WS_CHILD | WS_VISIBLE | WS_BORDER | ES_MULTILINE |
-                                    ES_READONLY | WS_VSCROLL,
-                                40, 925, 825, 55, window,
-                               reinterpret_cast<HMENU>(kStatus),
-                               GetModuleHandleW(nullptr), nullptr);
+       g_capture_native_bone_map = Button(
+           window, L"Capture one-shot Faith contract (diagnostic)",
+           kCaptureNativeBoneMap, 40, 846, 360, 30, BS_AUTOCHECKBOX);
+       Label(window, L"Output path (blank = %TEMP%)", 420, 850, 175, 22);
+       g_native_bone_map_capture_path = CreateWindowW(
+           L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_BORDER, 600, 846, 265, 30,
+           window, reinterpret_cast<HMENU>(kNativeBoneMapCapturePath),
+           GetModuleHandleW(nullptr), nullptr);
+       ApplyFont(g_native_bone_map_capture_path);
+       Label(window,
+             L"Capture requires a stable, fully mapped Faith palette; it never auto-enables native writes.",
+             40, 882, 825, 22);
+       Button(window, L"LAUNCH VR", kLaunch, 40, 920, 190, 42, BS_DEFPUSHBUTTON);
+       Button(window, L"Dry run", kDryRun, 245, 920, 130, 42);
+       Button(window, L"Save", kSave, 390, 920, 110, 42);
+       Label(window, L"STATUS", 40, 970, 160, 22);
+       g_status = CreateWindowW(
+           L"EDIT", L"Ready. HMD is not required for Dry run.",
+           WS_CHILD | WS_VISIBLE | WS_BORDER | ES_MULTILINE | ES_READONLY |
+               WS_VSCROLL,
+           40, 995, 825, 55, window, reinterpret_cast<HMENU>(kStatus),
+           GetModuleHandleW(nullptr), nullptr);
       ApplyFont(g_status);
       LoadSettings();
       return 0;
@@ -692,7 +724,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
   HWND window = CreateWindowExW(0, klass.lpszClassName,
                                L"MECVR // Catalyst VR", WS_OVERLAPPED |
                                    WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
-                                CW_USEDEFAULT, CW_USEDEFAULT, 920, 1020, nullptr,
+                               CW_USEDEFAULT, CW_USEDEFAULT, 920, 1090, nullptr,
                                nullptr, instance, nullptr);
   ShowWindow(window, show);
   UpdateWindow(window);

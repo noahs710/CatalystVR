@@ -22,6 +22,8 @@ param(
   [string]$RecordMotionClip,
   [string]$PlayMotionClip,
   [switch]$DiscoverPalettes,
+  [switch]$CaptureNativeBoneMap,
+  [string]$NativeBoneMapCapturePath,
   [ValidateSet('quad', 'projection')] [string]$MonoLayer = 'projection',
   [ValidateSet('view', 'local')] [string]$QuadSpace = 'view',
   [ValidateSet('smooth', 'snap')] [string]$TurnMode = 'smooth',
@@ -33,7 +35,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 if ([string]::IsNullOrWhiteSpace($PackageRoot)) {
-  $PackageRoot = Join-Path $PSScriptRoot '..\dist\MECVR-1.5.2.8-alpha'
+  $PackageRoot = Join-Path $PSScriptRoot '..\dist\MECVR-1.5.2.9-alpha'
 }
 $root = (Resolve-Path $PackageRoot).Path
 $bin = Join-Path $root 'bin'
@@ -78,10 +80,13 @@ $env:MECVR_RECORD_MOTION_CLIP = $RecordMotionClip
 $env:MECVR_PLAY_MOTION_CLIP = $PlayMotionClip
 $nativePoseRequested = -not [string]::IsNullOrWhiteSpace($NativeBoneMap)
 $env:MECVR_DISCOVER_PALETTES =
-  if ($DiscoverPalettes -or $nativePoseRequested) { '1' } else { '0' }
+  if ($DiscoverPalettes -or $nativePoseRequested -or $CaptureNativeBoneMap) { '1' } else { '0' }
+$env:MECVR_CAPTURE_NATIVE_BONE_MAP =
+  if ($CaptureNativeBoneMap) { '1' } else { '0' }
+$env:MECVR_CAPTURE_NATIVE_BONE_MAP_PATH = $NativeBoneMapCapturePath
 $env:MECVR_TURN_MODE = $TurnMode
 $effectivePerformanceMode =
-  if (($DiscoverPalettes -or $nativePoseRequested) -and
+  if (($DiscoverPalettes -or $nativePoseRequested -or $CaptureNativeBoneMap) -and
       $PerformanceMode -eq 'performance') {
     'diagnostic'
   } else {

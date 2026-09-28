@@ -20,6 +20,10 @@ only when explicitly configured.
 Camera mode defaults to full-eye projection with stereo enabled. The quad path
 is an explicit diagnostics/cinema fallback and appears as a theatre panel by
 design; it is not the immersive gameplay mode.
+The camera transport crops each CPU eye frame to a square before it reaches the
+XR compositor; it never asks the compositor to use a desktop 16:9 render
+surface. The active OpenXR/VDXR runtime still owns the headset's requested
+resolution and refresh rate.
 The raised-hands physical-jump gesture and calibrated physical-crouch gameplay
 input are separately persisted. Either bridge can be disabled without
 disabling the mod-owned body animation or controller input.
@@ -31,6 +35,13 @@ The same control can select a previously saved clip for looped playback while
 live head/camera tracking continues.
 `Dry run` validates the selected executable and package without starting the
 game and never requires an HMD or OpenXR runtime.
+
+The optional `Capture one-shot Faith contract` diagnostic arms a fail-closed
+capture in the camera module. It waits for a complete, stable, geometry-matched
+Faith palette and writes a reviewable `.map` artifact (to `%TEMP%` by default,
+or to the configured output path). The artifact is never auto-loaded and never
+enables native writes; it must be reviewed and supplied explicitly in a later
+launch.
 
 Runtime mode is explicit and persisted: `camera` selects the M3B 6DoF/capture
 path, while `mono` selects the stable M2B desktop/quad path. The launcher
