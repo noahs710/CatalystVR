@@ -3,7 +3,12 @@
 #include <algorithm>
 #include <cctype>
 #include <fstream>
+#include <iomanip>
+#include <limits>
 #include <string_view>
+
+#include "ik/faith_skeleton_contract.h"
+#include "render/faith_palette_match.h"
 
 namespace {
 
@@ -130,6 +135,115 @@ NativeBoneMapValidation ValidateNativeBoneMap(
   }
   if (result.mapped_joints == 0) result.complete = false;
   return result;
+}
+
+bool BuildFaithArmNativeBoneMap(
+    const render::NativePaletteObservation& observation, const void* data,
+    std::size_t data_size, std::uint64_t executable_fingerprint,
+    NativeBoneMap* output) {
+  if (output == nullptr || data == nullptr || data_size == 0 ||
+      executable_fingerprint == 0 || observation.constant_buffer_id == 0 ||
+      observation.resource_size == 0 ||
+      observation.resource_size != data_size ||
+      data_size > std::numeric_limits<std::uint32_t>::max() ||
+      !observation.candidate.valid()) {
+    return false;
+  }
+
+  // Geometry is the semantic proof. A classifier result alone only says that
+  // bytes look matrix-like and is not enough to arm a title-specific writer.
+  if (!render::MatchFaithArmPalette(data, data_size, observation.candidate))
+    return false;
+
+  NativeBoneMap parsed;
+  parsed.executable_fingerprint = executable_fingerprint;
+  parsed.resource_size = observation.resource_size;
+  if (observation.candidate.offset >
+          std::numeric_limits<std::uint32_t>::max() ||
+      observation.candidate.stride >
+          std::numeric_limits<std::uint32_t>::max()) {
+    return false;
+  }
+  parsed.palette_offset =
+      static_cast<std::uint32_t>(observation.candidate.offset);
+  parsed.palette_stride =
+      static_cast<std::uint32_t>(observation.candidate.stride);
+  parsed.layout = observation.candidate.layout;
+
+  constexpr BodyJoint kBodyArmJoints[] = {
+      BodyJoint::kLeftShoulder, BodyJoint::kLeftElbow,
+      BodyJoint::kLeftWrist,    BodyJoint::kLeftHand,
+      BodyJoint::kRightShoulder, BodyJoint::kRightElbow,
+      BodyJoint::kRightWrist,    BodyJoint::kRightHand};
+  for (std::size_t i = 0; i < std::size(kBodyArmJoints); ++i) {
+    parsed.joint_indices[static_cast<std::size_t>(kBodyArmJoints[i])] =
+        static_cast<std::int32_t>(kFaithArmBones[i].index);
+  }
+
+  const auto validation = ValidateNativeBoneMap(
+      parsed, observation, executable_fingerprint);
+  if (!validation.ready()) return false;
+  *output = parsed;
+  return true;
+}
+
+bool WriteNativeBoneMap(const std::string& path, const NativeBoneMap& map) {
+  if (path.empty() || map.executable_fingerprint == 0 ||
+      map.resource_size == 0 || map.palette_stride == 0 ||
+      map.layout == render::BoneMatrixLayout::kNone) {
+    return false;
+  }
+  std::ofstream stream(path, std::ios::trunc);
+  if (!stream.is_open()) return false;
+  stream << "# MECVR native Faith arm contract; review before enabling\n"
+         << "version=1\n"
+         << "executable_fingerprint=0x" << std::hex
+         << map.executable_fingerprint << std::dec << "\n"
+         << "resource_size=" << map.resource_size << "\n"
+         << "palette_offset=" << map.palette_offset << "\n"
+         << "palette_stride=" << map.palette_stride << "\n";
+  const char* layout = nullptr;
+  switch (map.layout) {
+    case render::BoneMatrixLayout::kAffine3x4:
+      layout = "affine3x4";
+      break;
+    case render::BoneMatrixLayout::kAffine4x4RowMajor:
+      layout = "affine4x4_row_major";
+      break;
+    case render::BoneMatrixLayout::kAffine4x4ColumnMajor:
+      layout = "affine4x4_column_major";
+      break;
+    default:
+      return false;
+  }
+  stream << "layout=" << layout << "\n";
+  constexpr std::array<std::pair<const char*, BodyJoint>, 21> kJointNames{{
+      {"root", BodyJoint::kRoot},
+      {"pelvis", BodyJoint::kPelvis},
+      {"chest", BodyJoint::kChest},
+      {"neck", BodyJoint::kNeck},
+      {"head", BodyJoint::kHead},
+      {"left_shoulder", BodyJoint::kLeftShoulder},
+      {"left_elbow", BodyJoint::kLeftElbow},
+      {"left_wrist", BodyJoint::kLeftWrist},
+      {"left_hand", BodyJoint::kLeftHand},
+      {"right_shoulder", BodyJoint::kRightShoulder},
+      {"right_elbow", BodyJoint::kRightElbow},
+      {"right_wrist", BodyJoint::kRightWrist},
+      {"right_hand", BodyJoint::kRightHand},
+      {"left_hip", BodyJoint::kLeftHip},
+      {"left_knee", BodyJoint::kLeftKnee},
+      {"left_ankle", BodyJoint::kLeftAnkle},
+      {"left_foot", BodyJoint::kLeftFoot},
+      {"right_hip", BodyJoint::kRightHip},
+      {"right_knee", BodyJoint::kRightKnee},
+      {"right_ankle", BodyJoint::kRightAnkle},
+      {"right_foot", BodyJoint::kRightFoot}}};
+  for (const auto& [name, joint] : kJointNames) {
+    const auto value = map.joint_indices[static_cast<std::size_t>(joint)];
+    if (value >= 0) stream << "joint." << name << "=" << value << "\n";
+  }
+  return stream.good();
 }
 
 bool LoadNativeBoneMap(const std::string& path, NativeBoneMap* output) {

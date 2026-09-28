@@ -639,7 +639,10 @@ void LiveCapture::capture(IDXGISwapChain* swapchain) {
     return;
   }
 
-  MonoFramePtr frame = copyFrame(swapchain, now);
+  // Every CPU frame entering an XR mailbox is normalized at this boundary.
+  // The desktop swapchain may be 16:9, ultrawide, or otherwise arbitrary;
+  // XR presentation must never inherit that aspect ratio as its scene image.
+  MonoFramePtr frame = MakeSquareFrame(copyFrame(swapchain, now));
   if (frame != nullptr && mailbox_->tryPublish(frame)) last_capture_ns_ = now;
 }
 

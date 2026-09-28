@@ -4,7 +4,22 @@
 #include <cassert>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <fstream>
+#include <vector>
+
+namespace {
+
+void PutRowMatrix(std::vector<unsigned char>* bytes, std::size_t index,
+                  double x, double y, double z) {
+  float matrix[16] = {1.0f, 0.0f, 0.0f, static_cast<float>(x),
+                      0.0f, 1.0f, 0.0f, static_cast<float>(y),
+                      0.0f, 0.0f, 1.0f, static_cast<float>(z),
+                      0.0f, 0.0f, 0.0f, 1.0f};
+  std::memcpy(bytes->data() + index * 64, matrix, sizeof(matrix));
+}
+
+}  // namespace
 
 int main() {
   using mecvr::ik::BodyJoint;
@@ -32,6 +47,55 @@ int main() {
                 distance(faith[6], faith[7])) >= 1e-5) {
     return 1;
   }
+
+  // A complete synthetic retail-shaped palette must produce exactly the
+  // eight Faith arm mappings. This is the positive proof used by capture
+  // tooling; it is independent of the hand-authored map below.
+  std::vector<unsigned char> faith_bytes(
+      static_cast<std::size_t>(mecvr::ik::kFaithSkeletonBoneCount) * 64, 0);
+  for (const auto& bone : faith) {
+    PutRowMatrix(&faith_bytes, bone.index, bone.model_position[0],
+                 bone.model_position[1], bone.model_position[2]);
+  }
+  NativePaletteObservation faith_observation;
+  faith_observation.constant_buffer_id = 0x44;
+  faith_observation.resource_size =
+      static_cast<std::uint32_t>(faith_bytes.size());
+  faith_observation.candidate.stride = 64;
+  faith_observation.candidate.matrix_count =
+      mecvr::ik::kFaithSkeletonBoneCount;
+  faith_observation.candidate.layout = BoneMatrixLayout::kAffine4x4RowMajor;
+  NativeBoneMap generated;
+  assert(mecvr::ik::BuildFaithArmNativeBoneMap(
+      faith_observation, faith_bytes.data(), faith_bytes.size(), 0x5678,
+      &generated));
+  assert(generated.executable_fingerprint == 0x5678);
+  assert(generated.joint_indices[static_cast<std::size_t>(
+             BodyJoint::kLeftShoulder)] == 8);
+  assert(generated.joint_indices[static_cast<std::size_t>(
+             BodyJoint::kLeftElbow)] == 9);
+  assert(generated.joint_indices[static_cast<std::size_t>(
+             BodyJoint::kRightHand)] == 118);
+  assert(mecvr::ik::ValidateNativeBoneMap(generated, faith_observation,
+                                          0x5678)
+             .ready());
+  const char* generated_path = "native_faith_arm_test.contract";
+  assert(mecvr::ik::WriteNativeBoneMap(generated_path, generated));
+  NativeBoneMap generated_loaded;
+  assert(mecvr::ik::LoadNativeBoneMap(generated_path, &generated_loaded));
+  assert(generated_loaded.joint_indices[static_cast<std::size_t>(
+             BodyJoint::kLeftWrist)] == 12);
+  std::remove(generated_path);
+
+  PutRowMatrix(&faith_bytes, faith[7].index, 100.0, 100.0, 100.0);
+  assert(!mecvr::ik::BuildFaithArmNativeBoneMap(
+      faith_observation, faith_bytes.data(), faith_bytes.size(), 0x5678,
+      &generated));
+  PutRowMatrix(&faith_bytes, faith[7].index, faith[7].model_position[0],
+               faith[7].model_position[1], faith[7].model_position[2]);
+  assert(!mecvr::ik::BuildFaithArmNativeBoneMap(
+      faith_observation, faith_bytes.data(), faith_bytes.size() - 64, 0x5678,
+      &generated));
 
   NativePaletteObservation observation;
   observation.constant_buffer_id = 4;

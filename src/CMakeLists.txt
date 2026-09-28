@@ -87,7 +87,7 @@ add_library(mecvr_ik STATIC
   ik/parkour_intent.cc
 )
 target_include_directories(mecvr_ik PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(mecvr_ik PUBLIC mecvr_camera)
+target_link_libraries(mecvr_ik PUBLIC mecvr_camera mecvr_render)
 
 add_library(mecvr_compat STATIC
   compatibility/support_report.cc

@@ -44,6 +44,21 @@ NativeBoneMapValidation ValidateNativeBoneMap(
     const render::NativePaletteObservation& observation,
     std::uint64_t executable_fingerprint);
 
+// Builds the smallest useful reviewed contract for Faith's tracked arms.
+// This function is intentionally capture-oriented: it requires the complete
+// observed resource bytes and a non-zero resource identity, then proves the
+// bytes match the retail bilateral arm geometry before emitting any indices.
+// It never guesses a layout from resource size alone.
+bool BuildFaithArmNativeBoneMap(
+    const render::NativePaletteObservation& observation, const void* data,
+    std::size_t data_size, std::uint64_t executable_fingerprint,
+    NativeBoneMap* output);
+
+// Writes the same small, reviewable text format consumed by LoadNativeBoneMap.
+// Only non-negative mapped joints are emitted; omitted joints remain the
+// deliberate partial-map marker (-1).
+bool WriteNativeBoneMap(const std::string& path, const NativeBoneMap& map);
+
 // Loads a deliberately small, reviewable text contract. Unknown keys and
 // malformed values reject the whole file; callers must still run
 // ValidateNativeBoneMap against live observations before writing anything.

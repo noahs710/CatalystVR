@@ -2755,6 +2755,7 @@ void DumpStatus(const char* tag, std::int64_t now_ns, std::int64_t first_ns) {
        "clear=%lld flush=%lld finish=%lld ik=%lld ik_valid=%lld body=%lld palettes=%lld "
        "camera_overrides=%lld overlay=%lld native_pose_attempts=%lld "
        "native_pose_applied=%lld native_pose_rejected=%lld "
+       "ctx=%ld d11dev=%ld d11dev1=%ld swapchains=%ld "
        "ctx_draws=%lld ctx_finishes=%lld ctx_executes=%lld "
        "phase=%s\n",
        tag, g_present_idx, g_draws_last_frame, g_draw_idx, g_cb_observed,
@@ -2766,8 +2767,9 @@ void DumpStatus(const char* tag, std::int64_t now_ns, std::int64_t first_ns) {
        g_d12_draws, g_clear_states, g_flushes, g_finish_lists, g_ik_frames,
        g_ik_valid_frames, g_body_overlay_frames, g_palette_candidates,
        camera_overrides, g_body_overlay_frames, native_pose_attempts,
-       native_pose_applied, native_pose_rejected, ctx_draws, ctx_finishes,
-       ctx_executes, g_phase);
+       native_pose_applied, native_pose_rejected, g_ctx_count, g_device_count,
+       g_device1_count, g_vtable_count, ctx_draws, ctx_finishes, ctx_executes,
+       g_phase);
   const char* names[] = {"setcb", "shader", "update", "map", "unmap",
                          "om",    "rs",     "present", "execl"};
   for (int i = 0; i < 9; ++i) {

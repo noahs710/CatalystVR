@@ -1,5 +1,14 @@
 # CatalystVR changelog
 
+## Unreleased — 1.5.2.8-alpha
+
+### Deterministic Faith arm contract capture
+
+- Added a geometry-gated builder that converts a complete, identified Faith-shaped palette observation into the eight known arm mappings only after executable, resource-size, layout, and bilateral-geometry checks pass.
+- Added reviewable contract serialization using the existing strict native-bone-map format; omitted torso and leg entries remain explicit partial-map behavior.
+- Added positive synthetic proof, asymmetric-palette rejection, truncated-resource rejection, and round-trip contract tests.
+- Kept retail writes fail-closed: ambiguous runtime buffers still cannot arm the native writer, and the capture design/spec records the evidence required before enabling a title-specific map.
+
 ## Unreleased — 1.5.2.7-alpha
 
 ### Staged Faith palette identity
